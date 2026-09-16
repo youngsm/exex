@@ -1,4 +1,14 @@
 # LXM3: XManager launch backend for HPC clusters
+
+## Fork status
+
+This is the `youngsm/lxm3` fork of `ethanluoyc/lxm3`. The
+[fork plan](docs/fork-plan.md) defines the additions for explicit multi-site
+execution, durable WorkUnits and retained research inputs/outputs while preserving
+LXM3's launch and packaging APIs. These additions are planned, not implemented;
+see the [baseline record](docs/fork-baseline.md). The upstream documentation follows.
+Use this checkout for fork development; the PyPI installation command below refers
+to the upstream distribution.
 [![PyPI version](https://badge.fury.io/py/lxm3.svg)](https://badge.fury.io/py/lxm3)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/lxm3)
 ![Read the Docs](https://img.shields.io/readthedocs/lxm3)
