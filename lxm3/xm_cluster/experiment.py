@@ -3,7 +3,7 @@ import functools
 import subprocess
 import time
 from concurrent import futures
-from typing import Any, Awaitable, Callable, List, Mapping, Optional, Union
+from typing import Any, Awaitable, Callable, List, Mapping, Optional, Sequence, Union
 
 import vcsinfo
 from absl import logging
@@ -20,8 +20,10 @@ from lxm3.xm_cluster import console
 from lxm3.xm_cluster import metadata
 from lxm3.xm_cluster import packaging
 from lxm3.xm_cluster.execution import gridengine as gridengine_execution
+from lxm3.xm_cluster.execution import job_script_builder
 from lxm3.xm_cluster.execution import local as local_execution
 from lxm3.xm_cluster.execution import slurm as slurm_execution
+from lxm3.xm_cluster.packaging.router import _package_target
 
 
 class _LaunchResult:
@@ -34,15 +36,33 @@ async def _launch(
     experiment_title: str,
     work_unit_name: str,
     job: Union[xm.JobGroup, array_job_lib.ArrayJob],
+    *,
+    config: config_lib.Config,
+    project: Optional[str],
 ):
     local_handles = []
     non_local_handles = []
 
     job_name = f"{experiment_title}_{work_unit_name}"
 
-    local_handles.extend(await local_execution.launch(job_name, job))  # type: ignore
-    non_local_handles.extend(await slurm_execution.launch(job_name, job))  # type: ignore
-    non_local_handles.extend(await gridengine_execution.launch(job_name, job))  # type: ignore
+    for payload in job_script_builder.flatten_job(job):
+        target = payload.executable._target
+        if target is not None and target != _package_target(
+            payload.executor.Spec(), config=config, project=project
+        ):
+            raise ValueError(
+                "Executable was packaged for a different destination; package it for this executor and experiment."
+            )
+
+    local_handles.extend(
+        await local_execution.launch(job_name, job, config=config, project=project)
+    )
+    non_local_handles.extend(
+        await slurm_execution.launch(job_name, job, config=config, project=project)
+    )
+    non_local_handles.extend(
+        await gridengine_execution.launch(job_name, job, config=config, project=project)
+    )
 
     return _LaunchResult(local_handles, non_local_handles)
 
@@ -94,6 +114,8 @@ class ClusterWorkUnit(xm.WorkUnit):
             self.experiment._experiment_title,  # type: ignore
             self.experiment_unit_name,
             job,
+            config=self.experiment._config,
+            project=self.experiment._project,
         )
         self._ingest_handles(launch_result)
 
@@ -120,14 +142,15 @@ class ClusterWorkUnit(xm.WorkUnit):
 
 
 class ClusterExperiment(xm.Experiment):
-    """A mock version of Experiment with abstract methods implemented."""
-
-    _async_packager = async_packager.AsyncPackager(packaging.package)
+    """An experiment with its own configuration and packaging queue."""
 
     def __init__(
         self,
         experiment_title: str,
         vcs: Optional[vcsinfo.VCS] = None,
+        *,
+        config: Optional[config_lib.Config] = None,
+        project: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.launched_jobs = []
@@ -136,6 +159,25 @@ class ClusterExperiment(xm.Experiment):
         self._experiment_id = int(time.time() * 10**3)
         self._experiment_title = experiment_title
         self._vcs = vcs
+        self._config = (
+            config if config is not None else config_lib.default()
+        )._snapshot()
+        self._project = project if project is not None else self._config.project()
+        self._async_packager = async_packager.AsyncPackager(
+            functools.partial(
+                packaging.package, config=self._config, project=self._project
+            )
+        )
+
+    def package(
+        self, packageables: Sequence[xm.Packageable] = ()
+    ) -> Sequence[xm.Executable]:
+        """Package for this experiment and flush its queued packaging requests."""
+        return self._async_packager.package(packageables)
+
+    def package_async(self, packageable: xm.Packageable) -> Awaitable[xm.Executable]:
+        """Queue a specification; package() performs the build and transfer."""
+        return self._async_packager.add(packageable)
 
     def _create_experiment_unit(
         self,
@@ -227,7 +269,10 @@ def _load_vcsinfo() -> Optional[vcsinfo.VCS]:
 
 
 def create_experiment(
-    experiment_title: str, project: Optional[str] = None
+    experiment_title: str,
+    project: Optional[str] = None,
+    *,
+    config: Optional[config_lib.Config] = None,
 ) -> ClusterExperiment:
     """Create a LXM3 experiment backed by the xm_cluster backend.
     Args:
@@ -235,18 +280,14 @@ def create_experiment(
         project: project that the experiment is launched in.
             If not set, a project name will be automatically deduced
             from the environment.
+        config: Site and storage configuration. Defaults to the current LXM3 config.
 
     """
-    config = config_lib.default()
-
-    if project:
-        config.set_project(project)
-    else:
-        vcs = _load_vcsinfo()
-        if not config.project() and vcs is not None:
-            config.set_project(vcs.name)
-
-    return ClusterExperiment(experiment_title, vcs=vcs)
+    config = config if config is not None else config_lib.default()
+    vcs = _load_vcsinfo()
+    if project is None:
+        project = config.project() or (vcs.name if vcs is not None else None)
+    return ClusterExperiment(experiment_title, vcs=vcs, config=config, project=project)
 
 
 def get_current_experiment():

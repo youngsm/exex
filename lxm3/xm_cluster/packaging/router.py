@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import Any, Sequence
+from typing import Any, Optional, Sequence
 
 import fsspec
 import fsspec.implementations
@@ -13,7 +13,7 @@ from lxm3._vendor.xmanager.xm import pattern_matching
 from lxm3.docker import build_image
 from lxm3.singularity import image_cache
 from lxm3.xm_cluster import artifacts
-from lxm3.xm_cluster import config
+from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executable_specs as cluster_executable_specs
 from lxm3.xm_cluster import executables as cluster_executables
@@ -64,6 +64,7 @@ def _package_python_package(
     py_package: cluster_executable_specs.PythonPackage,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
     with tempfile.TemporaryDirectory() as staging:
         entrypoint_cmd, archive_name = create_archive.create_python_archive(
@@ -88,6 +89,7 @@ def _package_pex_binary(
     spec: cluster_executable_specs.PexBinary,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
     with tempfile.TemporaryDirectory() as staging:
         entrypoint, archive_name = create_archive.create_pex_archive(staging, spec)
@@ -110,6 +112,7 @@ def _package_universal_package(
     universal_package: cluster_executable_specs.UniversalPackage,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
     with tempfile.TemporaryDirectory() as staging:
         entrypoint, archive_name = create_archive.create_universal_archive(
@@ -134,6 +137,7 @@ def _package_pdm_project(
     pdm_project: cluster_executable_specs.PDMProject,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
     py_package = cluster_executable_specs.PythonPackage(
         pdm_project.entrypoint,
@@ -148,13 +152,16 @@ def _package_pdm_project(
 
     singularity_image = "docker-daemon://{}:latest".format(py_package.name)
     spec = cluster_executable_specs.SingularityContainer(py_package, singularity_image)
-    return _package_singularity_container(spec, packageable, artifact_store)
+    return _package_singularity_container(
+        spec, packageable, artifact_store, image_cache_dir
+    )
 
 
 def _package_python_container(
     python_container: cluster_executable_specs.PythonContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
     py_package = cluster_executable_specs.PythonPackage(
         python_container.entrypoint, path=python_container.path
@@ -168,11 +175,15 @@ def _package_python_container(
     )
     singularity_image = "docker-daemon://{}:latest".format(py_package.name)
     spec = cluster_executable_specs.SingularityContainer(py_package, singularity_image)
-    return _package_singularity_container(spec, packageable, artifact_store)
+    return _package_singularity_container(
+        spec, packageable, artifact_store, image_cache_dir
+    )
 
 
 def _maybe_push_singularity_image(
-    singularity_image: str, artifact_store: artifacts.ArtifactStore
+    singularity_image: str,
+    artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ) -> str:
     transport, _ = singularity.uri.split(singularity_image)
     is_local_fs = isinstance(
@@ -192,8 +203,6 @@ def _maybe_push_singularity_image(
                 singularity_image_path(push_image_name),
             )
     elif transport == "docker-daemon":
-        storage_root = config.default().local_settings().storage_root
-        image_cache_dir = os.path.join(storage_root, "image_cache")
         cache_image_info = image_cache.get_cached_image(
             singularity_image, cache_dir=image_cache_dir
         )
@@ -216,10 +225,13 @@ def _package_singularity_container(
     container: cluster_executable_specs.SingularityContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
-    executable = _PACKAGING_ROUTER(container.entrypoint, packageable, artifact_store)
+    executable = _PACKAGING_ROUTER(
+        container.entrypoint, packageable, artifact_store, image_cache_dir
+    )
     deploy_container_path = _maybe_push_singularity_image(
-        container.image_path, artifact_store
+        container.image_path, artifact_store, image_cache_dir
     )
     executable.container_image = cluster_executables.ContainerImage(
         name=deploy_container_path,
@@ -232,8 +244,11 @@ def _package_docker_container(
     container: cluster_executable_specs.DockerContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
-    executable = _PACKAGING_ROUTER(container.entrypoint, packageable, artifact_store)
+    executable = _PACKAGING_ROUTER(
+        container.entrypoint, packageable, artifact_store, image_cache_dir
+    )
     docker_image = container.image
     executable.container_image = cluster_executables.ContainerImage(
         name=docker_image,
@@ -246,6 +261,7 @@ def _throw_on_unknown_executable(
     executable: Any,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
 ):
     del artifact_store
     raise TypeError(
@@ -266,30 +282,72 @@ _PACKAGING_ROUTER = pattern_matching.match(
 )
 
 
-def _get_artifact_store(executor_spec: xm.ExecutorSpec) -> artifacts.ArtifactStore:
+def _get_artifact_store(
+    executor_spec: xm.ExecutorSpec,
+    *,
+    config: config_lib.Config,
+    project: Optional[str],
+) -> artifacts.ArtifactStore:
     def local_store(executor_spec: executors.LocalSpec):
-        return local.client().artifact_store
+        return local.client(
+            settings=config.local_settings(), project=project
+        ).artifact_store
 
     def gridengine_store(executor_spec: executors.GridEngineSpec):
-        return gridengine.client().artifact_store
+        return gridengine.client(
+            settings=config.cluster_settings(executor_spec.cluster),
+            project=project,
+        ).artifact_store
 
     def slurm_store(executor_spec: executors.SlurmSpec):
-        return slurm.client().artifact_store
+        return slurm.client(
+            settings=config.cluster_settings(executor_spec.cluster),
+            project=project,
+        ).artifact_store
 
     return pattern_matching.match(local_store, gridengine_store, slurm_store)(
         executor_spec
     )
 
 
-def packaging_router(packageable: xm.Packageable):
-    artifact_store = _get_artifact_store(packageable.executor_spec)
-    return _PACKAGING_ROUTER(packageable.executable_spec, packageable, artifact_store)
+def _package_target(
+    executor_spec: xm.ExecutorSpec, *, config: config_lib.Config, project: Optional[str]
+) -> tuple:
+    """The backend and staging destination of a prepared bundle, without connecting."""
+    if isinstance(executor_spec, executors.LocalSpec):
+        return ("local", config.local_settings().storage_root, project)
+    settings = config.cluster_settings(executor_spec.cluster)
+    return (
+        type(executor_spec).__name__,
+        settings.hostname,
+        settings.user,
+        settings.storage_root,
+        project,
+    )
 
 
-def package(packageables: Sequence[xm.Packageable]):
-    executables = []
+def packaging_router(
+    packageable: xm.Packageable, *, config: config_lib.Config, project: Optional[str]
+):
+    target = _package_target(packageable.executor_spec, config=config, project=project)
+    artifact_store = _get_artifact_store(
+        packageable.executor_spec, config=config, project=project
+    )
+    image_cache_dir = os.path.join(config.local_settings().storage_root, "image_cache")
+    executable = _PACKAGING_ROUTER(
+        packageable.executable_spec, packageable, artifact_store, image_cache_dir
+    )
+    executable._target = target
+    return executable
 
-    for packageable in packageables:
-        executables.append(packaging_router(packageable))
 
-    return executables
+def package(
+    packageables: Sequence[xm.Packageable],
+    *,
+    config: config_lib.Config,
+    project: Optional[str],
+):
+    return [
+        packaging_router(packageable, config=config, project=project)
+        for packageable in packageables
+    ]

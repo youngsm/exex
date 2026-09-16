@@ -1,3 +1,4 @@
+import copy
 import functools
 import os
 from typing import Any, Optional
@@ -71,6 +72,26 @@ class Config:
     def __init__(self, data, project=None) -> None:
         self._data = data
         self._project = project
+        self._environment = os.environ
+
+    def _snapshot(self) -> "Config":
+        """Capture this experiment's settings without changing the caller's config."""
+        snapshot = Config(copy.deepcopy(self._data), self._project)
+        snapshot._environment = {
+            key: self._environment.get(key) for key in ("LXM_PROJECT", "LXM_CLUSTER")
+        }
+        local = snapshot.local_settings()
+        local._data["storage"]["staging"] = os.path.abspath(
+            os.path.expanduser(local.storage_root)
+        )
+        for data in snapshot._data.get("clusters", []):
+            settings = ClusterSettings(data)
+            if settings.hostname is None:
+                storage_root = os.path.abspath(
+                    os.path.expanduser(settings.storage_root)
+                )
+                data["storage"]["staging"] = storage_root
+        return snapshot
 
     def __repr__(self) -> Any:
         return repr(self._data)
@@ -87,7 +108,7 @@ class Config:
         return cls(config_dict)
 
     def project(self) -> Optional[str]:
-        project = os.environ.get("LXM_PROJECT", None)
+        project = self._environment.get("LXM_PROJECT")
         if project is not None:
             return project
         return self._project
@@ -103,7 +124,7 @@ class Config:
     def default_cluster(self) -> str:
         if "clusters" not in self._data:
             self._data["clusters"] = []
-        cluster = os.environ.get("LXM_CLUSTER", None)
+        cluster = self._environment.get("LXM_CLUSTER")
         if cluster is None:
             if not self._data.get("clusters", None):
                 raise ValueError(
@@ -116,11 +137,13 @@ class Config:
             cluster = self._data["clusters"][0]["name"]
         return cluster
 
-    def cluster_settings(self) -> ClusterSettings:
-        location = self.default_cluster()
-        clusters = {cluster["name"]: cluster for cluster in self._data["clusters"]}
+    def cluster_settings(self, name: Optional[str] = None) -> ClusterSettings:
+        location = name if name is not None else self.default_cluster()
+        clusters = {
+            cluster["name"]: cluster for cluster in self._data.get("clusters", [])
+        }
         if location not in clusters:
-            raise ValueError("Unknown cluster")
+            raise ValueError(f"Unknown cluster: {location!r}")
         cluster_config = clusters[location]
         return ClusterSettings(cluster_config)
 

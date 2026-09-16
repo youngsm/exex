@@ -1,9 +1,45 @@
 # LXM3 fork: implementation delta
 
-Status: planning baseline, 2026-09-16. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
+Status: implementation in progress, 2026-09-16. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
 Upstream: [ethanluoyc/lxm3](https://github.com/ethanluoyc/lxm3), commit
-`30f55855e595ee7d8397daacb1475442265f37ef`. No execution behavior is changed by
-this plan. Existing exex and pimm code, catalogs and live workflows remain intact.
+`30f55855e595ee7d8397daacb1475442265f37ef`. The
+[approved API contract](fork-api-proposal.md) defines the method-level changes.
+Existing exex and pimm code, catalogs and live workflows remain intact.
+
+## Implementation progress
+
+The first implementation patch covers explicit-site routing and experiment-scoped
+packaging. It is a subset of section 1, not completion of the entire roadmap.
+
+- `Slurm(cluster=...)` and `GridEngine(cluster=...)` carry their selection into
+  instance `Spec()` calls. Local's class/instance `Spec()` calls remain unchanged.
+- `create_experiment(..., config=...)` snapshots config, environment defaults and
+  local/on-site staging paths. Explicit project names do not mutate shared config.
+- Each Experiment owns its packaging queue. Packaging, nested image caching and
+  submission receive explicit settings/project; execution clients are not globally
+  cached. The artifact-store factory uses its supplied arguments.
+- Packaged AppBundles record their backend/staging destination. Submission to a
+  different site, project, backend or changed staging profile raises before creating
+  clients. Existing manually constructed AppBundles remain supported.
+- No author database is introduced in this patch. The private packaging `store`
+  parameter from the full proposal waits for the retained-source/catalog slice.
+
+Remote execution still uses upstream Fabric/Paramiko transport. System OpenSSH,
+the remaining script/exit-code fixes in section 1 and live site qualification are
+outstanding. Source freezing, reopening/lifecycle methods, artifacts and continuation
+remain unimplemented; the approved API document is not a claim that these exist.
+
+Validation uses the isolated Python 3.12 environment from the baseline, temporary
+staging directories, a real local CPU process and mocked scheduler/remote storage
+calls. No GPU, real SSH or scheduler jobs, container builds or image pulls are used.
+The regression suite covers two-site/two-project isolation, config/environment
+mutation, independent packaging queues, sync/async contexts, arrays/generators,
+target mismatches, nested image-cache routing and no retry after submission errors.
+
+Final check: `pytest -m 'not integration' tests lxm3/_vendor` with the baseline's
+timeout and isolated environment: **211 passed, 2 deselected** in 5.16 seconds.
+The 40 warnings concern upstream asyncio/async-generator deprecations. Ruff lint,
+format checks and `git diff --check` pass for all changed Python files.
 
 ## Decision and scope
 

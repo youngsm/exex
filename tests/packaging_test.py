@@ -41,7 +41,9 @@ class PackagingTest(parameterized.TestCase):
             unittest.mock.patch("subprocess.run"),
         ):
             executable = router.packaging_router(
-                xm.Packageable(spec, xm_cluster.Local().Spec())
+                xm.Packageable(spec, xm_cluster.Local().Spec()),
+                config=xm_cluster.Config.default(),
+                project="test",
             )
             self.assertIsInstance(executable, xm_cluster.AppBundle)
 
@@ -67,7 +69,9 @@ class PackagingTest(parameterized.TestCase):
             router, "_get_artifact_store", return_value=store
         ):
             executable = router.packaging_router(
-                xm.Packageable(spec, xm_cluster.Local().Spec())
+                xm.Packageable(spec, xm_cluster.Local().Spec()),
+                config=xm_cluster.Config.default(),
+                project="test",
             )
             self.assertIsInstance(executable, xm_cluster.AppBundle)
             # Check that archive exists
@@ -110,8 +114,13 @@ class PackagingTest(parameterized.TestCase):
                 path=blob.full_path,
                 blob_path=blob.full_path,
             )
-            router._maybe_push_singularity_image(image_name, artifact_store=store)
-            mock_get_cached_image.assert_called_once()
+            cache_dir = self.create_tempdir().full_path
+            router._maybe_push_singularity_image(
+                image_name, artifact_store=store, image_cache_dir=cache_dir
+            )
+            mock_get_cached_image.assert_called_once_with(
+                image_name, cache_dir=cache_dir
+            )
 
     def test_package_pex(self):
         spec = xm_cluster.PexBinary(
@@ -129,7 +138,9 @@ class PackagingTest(parameterized.TestCase):
             unittest.mock.patch("subprocess.run"),
         ):
             executable = router.packaging_router(
-                xm.Packageable(spec, xm_cluster.Local().Spec())
+                xm.Packageable(spec, xm_cluster.Local().Spec()),
+                config=xm_cluster.Config.default(),
+                project="test",
             )
             self.assertIsInstance(executable, xm_cluster.AppBundle)
 

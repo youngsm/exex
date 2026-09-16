@@ -5,8 +5,11 @@
 This is the `youngsm/lxm3` fork of `ethanluoyc/lxm3`. The
 [fork plan](docs/fork-plan.md) defines the additions for explicit multi-site
 execution, durable WorkUnits and retained research inputs/outputs while preserving
-LXM3's launch and packaging APIs. These additions are planned, not implemented;
-see the [baseline record](docs/fork-baseline.md). The upstream documentation follows.
+LXM3's launch and packaging model. Explicit cluster selection and experiment-scoped
+packaging are implemented; durable WorkUnits and retained source/outputs are not yet.
+See the [approved API](docs/fork-api-proposal.md),
+[implementation progress](docs/fork-plan.md#implementation-progress) and
+[baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers
 to the upstream distribution.
 [![PyPI version](https://badge.fury.io/py/lxm3.svg)](https://badge.fury.io/py/lxm3)

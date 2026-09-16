@@ -1,5 +1,4 @@
 import datetime
-import functools
 import os
 import re
 from typing import List, Optional
@@ -109,11 +108,12 @@ class SlurmClient:
         return handles
 
 
-@functools.lru_cache()
-def client() -> SlurmClient:
-    project = config_lib.default().project()
-    settings = config_lib.default().cluster_settings()
-    artifact_store = job_script_builder.create_artifact_store(settings, project)
+def client(
+    *, settings: config_lib.ClusterSettings, project: Optional[str]
+) -> SlurmClient:
+    artifact_store = job_script_builder.create_artifact_store(
+        settings=settings, project=project
+    )
     return SlurmClient(settings, artifact_store)
 
 
@@ -126,7 +126,9 @@ def _slurm_job_predicate(job):
         raise ValueError(f"Unexpected job type: {type(job)}")
 
 
-async def launch(job_name: str, job) -> List[SlurmHandle]:
+async def launch(
+    job_name: str, job, *, config: config_lib.Config, project: Optional[str]
+) -> List[SlurmHandle]:
     jobs = job_script_builder.flatten_job(job)
     jobs = [job for job in jobs if _slurm_job_predicate(job)]
 
@@ -138,12 +140,8 @@ async def launch(job_name: str, job) -> List[SlurmHandle]:
             "Cannot launch a job group with multiple jobs as a single job."
         )
 
-    if not isinstance(jobs[0].executor, executors.Slurm):
-        raise ValueError(
-            "Only GridEngine executors are supported by the gridengine backend."
-        )
-
-    return client().launch(job_name, jobs[0])
+    settings = config.cluster_settings(jobs[0].executor.cluster)
+    return client(settings=settings, project=project).launch(job_name, jobs[0])
 
 
 def _format_slurm_time(duration: datetime.timedelta) -> str:

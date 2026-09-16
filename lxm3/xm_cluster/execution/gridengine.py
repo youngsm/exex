@@ -1,4 +1,3 @@
-import functools
 import os
 import re
 from typing import List, Optional
@@ -145,11 +144,10 @@ Successfully launched job [green bold]{job_id}[/]
         self._artifact_store.put_text(job_id, f"jobs/{job_name}/job_id")
 
 
-@functools.lru_cache()
-def client():
-    project = config_lib.default().project()
-    settings = config_lib.default().cluster_settings()
-    artifact_store = job_script_builder.create_artifact_store(project, settings)
+def client(*, settings: config_lib.ClusterSettings, project: Optional[str]):
+    artifact_store = job_script_builder.create_artifact_store(
+        project=project, settings=settings
+    )
 
     return GridEngineClient(settings, artifact_store)
 
@@ -163,7 +161,9 @@ def _sge_job_predicate(job):
         raise ValueError(f"Unexpected job type: {type(job)}")
 
 
-async def launch(job_name: str, job) -> List[GridEngineHandle]:
+async def launch(
+    job_name: str, job, *, config: config_lib.Config, project: Optional[str]
+) -> List[GridEngineHandle]:
     jobs = job_script_builder.flatten_job(job)
     jobs = [job for job in jobs if _sge_job_predicate(job)]
 
@@ -175,7 +175,8 @@ async def launch(job_name: str, job) -> List[GridEngineHandle]:
             "Cannot launch a job group with multiple jobs as a single job."
         )
 
-    return client().launch(job_name, jobs[0])
+    settings = config.cluster_settings(jobs[0].executor.cluster)
+    return client(settings=settings, project=project).launch(job_name, jobs[0])
 
 
 def _format_time(duration_seconds: int) -> str:

@@ -24,3 +24,5 @@ class AppBundle(xm.Executable):
     args: xm.SequentialArgs = attr.Factory(xm.SequentialArgs)
     env_vars: Dict[str, str] = attr.Factory(dict)
     container_image: Optional[ContainerImage] = None
+    # Set by packaging; handwritten bundles retain their existing behavior.
+    _target: Optional[tuple] = attr.field(default=None, init=False, repr=False)

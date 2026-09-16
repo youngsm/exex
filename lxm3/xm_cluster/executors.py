@@ -90,6 +90,8 @@ class Local(xm.Executor, SupportsContainer):
 class GridEngineSpec(xm.ExecutorSpec):
     """Spec for SGE execution."""
 
+    cluster: Optional[str] = None
+
 
 @attr.s(auto_attribs=True)
 class GridEngine(xm.Executor, SupportsContainer):
@@ -159,14 +161,17 @@ class GridEngine(xm.Executor, SupportsContainer):
     singularity_options: Optional[SingularityOptions] = None
     docker_options: Optional[DockerOptions] = None
 
-    @classmethod
-    def Spec(cls) -> GridEngineSpec:
-        return GridEngineSpec()
+    cluster: Optional[str] = attr.field(default=None, kw_only=True)
+
+    def Spec(self) -> GridEngineSpec:
+        return GridEngineSpec(cluster=self.cluster)
 
 
 @attr.s(auto_attribs=True)
 class SlurmSpec(xm.ExecutorSpec):
     """Spec for Slurm execution."""
+
+    cluster: Optional[str] = None
 
 
 @attr.s(auto_attribs=True)
@@ -192,6 +197,7 @@ class Slurm(xm.Executor, SupportsContainer):
     extra_directives: Sequence[str] = attr.Factory(list)
     skip_directives: Sequence[str] = attr.Factory(list)
 
-    @classmethod
-    def Spec(cls) -> SlurmSpec:
-        return SlurmSpec()
+    cluster: Optional[str] = attr.field(default=None, kw_only=True)
+
+    def Spec(self) -> SlurmSpec:
+        return SlurmSpec(cluster=self.cluster)

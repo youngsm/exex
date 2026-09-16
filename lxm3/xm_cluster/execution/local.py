@@ -1,7 +1,6 @@
 import asyncio
 import atexit
 import concurrent.futures
-import functools
 import os
 import re
 import shutil
@@ -140,15 +139,13 @@ class LocalClient:
         return handles
 
 
-@functools.lru_cache()
-def client() -> LocalClient:
-    project = config_lib.default().project()
-    local_settings = config_lib.default().local_settings()
-
+def client(
+    *, settings: config_lib.LocalSettings, project: Optional[str]
+) -> LocalClient:
     filesystem = fsspec.filesystem("file")
-    storage_root = os.path.abspath(os.path.expanduser(local_settings.storage_root))
+    storage_root = os.path.abspath(os.path.expanduser(settings.storage_root))
     artifact_store = artifacts.ArtifactStore(filesystem, storage_root, project=project)
-    return LocalClient(local_settings, artifact_store)
+    return LocalClient(settings, artifact_store)
 
 
 def _local_job_predicate(job):
@@ -160,7 +157,9 @@ def _local_job_predicate(job):
         raise ValueError(f"Unexpected job type: {type(job)}")
 
 
-async def launch(job_name: str, job):
+async def launch(
+    job_name: str, job, *, config: config_lib.Config, project: Optional[str]
+):
     jobs = job_script_builder.flatten_job(job)
     jobs = [job for job in jobs if _local_job_predicate(job)]
 
@@ -172,4 +171,6 @@ async def launch(job_name: str, job):
             "Cannot launch a job group with multiple jobs as a single job."
         )
 
-    return client().launch(job_name, jobs[0])
+    return client(settings=config.local_settings(), project=project).launch(
+        job_name, jobs[0]
+    )

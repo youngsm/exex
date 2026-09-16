@@ -416,9 +416,9 @@ def flatten_job(
         raise NotImplementedError()
 
 
-def create_artifact_store(project, settings):
-    project = config_lib.default().project()
-    settings = config_lib.default().cluster_settings()
+def create_artifact_store(
+    *, project: Optional[str], settings: config_lib.ClusterSettings
+):
     hostname = settings.hostname
     storage_root = settings.storage_root
     user = settings.user
