@@ -4,6 +4,7 @@
 
 ```python
 get_experiment(experiment_id: int, *, config: Config | None = None) -> ClusterExperiment
+list_experiments(*, project: str | None = None, config: Config | None = None) -> Sequence[ClusterExperiment]
 experiment.work_units() -> Mapping[int, ClusterWorkUnit]
 unit.get_status() -> WorkUnitStatus
 unit.get_logs(*, task: int | None = None, tail: int = 200) -> str
@@ -22,6 +23,13 @@ experiment IDs raise `xm.NotFoundError` without creating storage. Retrieved
 experiments now support [adding new independent WorkUnits](source-capture.md#retrieve-and-add-another-run)
 inside their submission context. Loaded WorkUnits themselves cannot be resubmitted.
 Sync/async contexts and awaitable `add()` remain.
+
+`list_experiments()` returns retrieved handles newest first, ordered by experiment
+ID. `project=None` includes every project in the configured author catalog, even
+when `LXM_PROJECT` is set; a supplied project matches exactly. Listing never polls,
+imports a launcher, captures source or submits. A missing catalog returns an empty
+list without creating its database or directories. The returned handles support
+the same inspection and explicit append operations as `get_experiment()`.
 
 ## Actual usage
 
@@ -47,8 +55,8 @@ for work_unit_id, unit in experiment.work_units().items():
 print(experiment.work_units()[1].get_logs(tail=100))
 ```
 
-The standalone [inspection example](../examples/inspection/reopen.py) runs exactly
-this workflow. It is not a new `lxm3` CLI subcommand:
+The standalone [inspection example](../examples/inspection/reopen.py) remains a
+runnable Python example of this workflow:
 
 ```bash
 python examples/inspection/reopen.py EXPERIMENT_ID \
@@ -59,6 +67,42 @@ For an array, choose `--work-unit=1 --task=0`; task indices are zero-based regar
 of Slurm's array offset. Status queries do not require logs to exist yet. Asking
 for a missing log raises the ordinary file/command error rather than returning
 an empty success. `tail=0` returns no lines; negative counts are invalid.
+
+## Command line
+
+The CLI uses the same Python methods and configured author catalog:
+
+```bash
+export LXM_CONFIG=/path/to/lxm.toml
+lxm3 experiments
+lxm3 experiments --project demo
+lxm3 status 101
+lxm3 status 101 3
+lxm3 logs 101 3 --tail 100
+lxm3 logs 101 3 --task 0 --tail 100
+lxm3 stop 101 3
+```
+
+Use the experiment and WorkUnit IDs printed by discovery/status. The config can
+also be selected with `--lxm_config=/path/to/lxm.toml` before or after the management
+subcommand. Otherwise the existing environment, working-directory `lxm.toml`, and
+user-config lookup applies. Use the same durable `[local.storage].staging` that
+was used to create the experiment; this is not discovery across other catalogs.
+
+- `experiments` shows saved IDs, projects and titles. An empty catalog prints
+  column headers only. It has no implicit status query or project filter.
+- `status` queries all recorded WorkUnits, or just the supplied actual ID.
+  A successful read exits zero even when the reported job is failed or unknown;
+  this is an inspection command, not a completion wait.
+- `logs` prints the returned text without decorations or an added newline.
+  The default tail is 200 lines. Multi-task arrays require a zero-based `--task`.
+- `stop` delegates to [WorkUnit.stop()](control.md), supports Slurm, and targets
+  the whole WorkUnit/array. It returns silently without waiting for termination.
+  With no accepted execution handle it is a no-op, just like the Python method.
+- Missing IDs, invalid arguments, unsupported operations and native/SSH failures
+  exit nonzero. Errors propagate; there is no retry, auto-submission or watch loop.
+
+`launch`/`version` are unchanged. Launch-script arguments still follow `--`.
 
 ## Persistence and observations
 
@@ -108,11 +152,27 @@ an empty success. `tail=0` returns no lines; negative counts are invalid.
 
 Existing pre-patch jobs are not retroactively imported. GridEngine submissions
 still work, but their inspection adapter is not implemented. Local cancellation,
-keyed submission, discovery/listing, persistent annotations, prepared-executable
-lookup, outputs, continuation and new CLI commands remain
+keyed submission, persistent annotations, prepared-executable
+lookup, outputs and continuation remain
 separate work. This does not complete section 3 of the broader fork plan.
 
 ## Verification
+
+The subsequent discovery/CLI slice passes **479 tests, 2 integration tests
+deselected**, including 26 new cases in `tests/cli_test.py`. These cover read-only
+discovery, project filtering/order, actual-ID selection, literal output, zero-based
+array logs, cancellation delegation, SSH failures without retry, error exits,
+fresh CLI processes, config precedence and existing launch argument forwarding.
+
+Read-only CLI qualification on 2026-09-21 used the existing S3DF author config at
+`/sdf/group/neutrino/youngsam/representations/lxm3-reuse.wctFcV/lxm.toml`.
+`experiments` found `1790014763042766562`; `status` reported its Local WorkUnit 1
+and NERSC WorkUnit 2 completed, with native job `58703111` at `COMPLETED 0:0`.
+`logs ... 2 --tail 20` retrieved the retained stdout from `nid008329`, including
+literal quoted/dollar-sign/newline content. The catalog hash was unchanged.
+No new jobs were submitted and no live cancellation was issued for this slice;
+CLI cancellation delegates to the previously qualified method and is tested with
+a mocked native transport. The original inspection qualification follows.
 
 `tests/inspection_test.py` launches and reopens Local successes/failures in separate
 Python processes. It covers read-only retrieval, missing IDs, ID allocation,

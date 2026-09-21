@@ -68,6 +68,19 @@ class Catalog:
             raise xm.NotFoundError(experiment_id)
         return dict(row)
 
+    def experiment_ids(self, project=None):
+        if not self.path.exists():
+            return []
+        with self.connect() as db:
+            return [
+                row["id"]
+                for row in db.execute(
+                    "SELECT id FROM experiments "
+                    "WHERE (? IS NULL OR project = ?) ORDER BY id DESC",
+                    (project, project),
+                )
+            ]
+
     def create_work_unit(self, experiment_id):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")

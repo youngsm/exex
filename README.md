@@ -27,6 +27,9 @@ Slurm `stop()` and Local/Slurm `wait_until_complete()`, including after reopenin
 `experiment.sources()` retrieves retained source, and a retrieved experiment can
 [accept new independent jobs](docs/source-capture.md#retrieve-and-add-another-run)
 without the original checkout or launcher.
+The [management CLI](docs/inspection.md#command-line) exposes `lxm3 experiments`,
+`status`, `logs` and `stop` against that same catalog. `list_experiments()` provides
+metadata-only discovery in Python; no scheduler connection is needed to list runs.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Keyed submission, prepared

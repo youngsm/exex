@@ -65,7 +65,16 @@ python examples/control/control.py EXPERIMENT_ID --config=/path/to/lxm.toml --st
 
 The second invocation deliberately raises XM's not-completed error on confirmed
 cancellation. A timeout raises `TimeoutError`; neither timeout nor Ctrl-C on the
-reader requests job cancellation. There are no new `lxm3` CLI subcommands.
+reader requests job cancellation. The [management CLI](inspection.md#command-line)
+also exposes cancellation directly, using the same configured author catalog:
+
+```bash
+lxm3 stop EXPERIMENT_ID WORK_UNIT_ID
+```
+
+It returns silently after `stop()` returns, without polling or claiming the job
+has terminated. It cancels the whole WorkUnit, including all tasks of an array.
+There is no CLI wait command in this slice; use the Python method or example above.
 
 For Local, launch with `--target=local --duration=0`, optionally `--tasks=2`.
 Local still waits on context exit; the subsequent reader observes its recorded

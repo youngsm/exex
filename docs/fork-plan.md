@@ -88,8 +88,8 @@ Slurm accounting remains the status authority, without a cached-success fallback
 This implements reopening/inspection from section 3. The subsequent
 [control slice](control.md) implements the inherited `stop()` for Slurm and
 `wait_until_complete()` for Slurm/Local, including after reopening. Local
-cancellation, keyed submission, experiment discovery, metadata editing,
-continuation and CLI additions remain deferred. GridEngine launching is unchanged;
+cancellation, keyed submission, metadata editing and continuation remain deferred.
+Discovery and CLI additions are covered below. GridEngine launching is unchanged;
 its inspection/control adapter is not part of these slices.
 The inspection slice passed 408 regressions. Separate-process inspection retrieved
 real Local and S3DF-to-NERSC status/logs; NERSC job `58682890` completed with exit 0
@@ -113,6 +113,19 @@ Live qualification retrieved the original source in a new process and added
 WorkUnit 2 to experiment `1790014763042766562`: NERSC job `58703111` completed in
 6 seconds with exit `0:0`. The original Local WorkUnit record/output and source
 archive were unchanged; the remote archive hash matched. No allocation remains.
+
+The [discovery and CLI slice](inspection.md#command-line) adds `list_experiments()`
+and `lxm3 experiments`, `status`, `logs` and `stop`. Discovery is an author-catalog
+read, newest first with an optional exact project filter; it creates no storage
+and contacts no scheduler. CLI commands delegate to the existing WorkUnit methods,
+including zero-based array logs, recorded cancellation targets and native errors
+without retries. Config selection and launch-script argument forwarding are
+preserved. There are no new dependencies, schema changes, metadata-editing APIs,
+prepared-executable persistence, keyed submissions, artifacts or pimm changes.
+All 479 regressions pass, including 26 new discovery/CLI cases. Separate CLI
+processes listed the existing qualification experiment and read successful native
+NERSC status/stdout for job `58703111`, leaving the catalog unchanged. No new job
+or live cancellation was needed for this slice.
 
 ## Decision and scope
 

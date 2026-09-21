@@ -28,6 +28,7 @@ from lxm3.xm_cluster.experiment import ClusterWorkUnit
 from lxm3.xm_cluster.experiment import create_experiment
 from lxm3.xm_cluster.experiment import get_current_experiment
 from lxm3.xm_cluster.experiment import get_experiment
+from lxm3.xm_cluster.experiment import list_experiments
 from lxm3.xm_cluster.inspection import WorkUnitStatus
 from lxm3.xm_cluster.requirements import JobRequirements
 

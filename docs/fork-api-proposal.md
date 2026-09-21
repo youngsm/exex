@@ -96,7 +96,7 @@ def get_experiment(
     config: Config | None = None,
 ) -> ClusterExperiment: ...
 
-# NEW discovery; returns handles, not scheduler observations.
+# IMPLEMENTED discovery; returns handles, not scheduler observations.
 def list_experiments(
     *,
     project: str | None = None,
@@ -252,19 +252,24 @@ selects the current attempt. No merged cross-rank log ordering is promised.
 
 ## 6. Thin CLI surface
 
-Keep `lxm3 launch launcher.py -- ...` and `version`. Add only these initial commands:
+Implemented alongside the existing `lxm3 launch launcher.py -- ...` and `version`:
 
 ```sh
 lxm3 experiments --project demo
 lxm3 status 101                 # WorkUnits in experiment 101.
 lxm3 status 101 3               # One WorkUnit.
 lxm3 logs 101 3 --tail 100
+lxm3 logs 101 3 --task 0 --tail 100  # Zero-based array task.
 lxm3 stop 101 3                 # Explicit mutation, not an inspection command.
 ```
 
-These are proposed syntax, not currently available commands. They use the existing
-config-loading path and Python methods above. No launch replay, tracking server,
-background watch, automatic target selection or second management database.
+These commands use the existing config-loading path, including `LXM_CONFIG` and
+`--lxm_config`, and the Python methods above. Discovery returns all projects when
+no project filter is supplied, newest first; it neither creates missing storage
+nor contacts schedulers. `status` explicitly queries execution state. `logs`
+defaults to 200 lines. `stop` requests cancellation without waiting for termination.
+No launch replay, tracking server, background watch, automatic target selection or
+second management database. See the [CLI contract](inspection.md#command-line).
 
 ## 7. Next review: artifact and continuation extension
 

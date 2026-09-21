@@ -404,6 +404,24 @@ def get_experiment(
     return ClusterExperiment("", config=config, _experiment_id=experiment_id)
 
 
+def list_experiments(
+    *,
+    project: Optional[str] = None,
+    config: Optional[config_lib.Config] = None,
+) -> Sequence[ClusterExperiment]:
+    """List saved experiments newest first, without polling or submitting.
+
+    project=None includes all projects in the configured author catalog. A missing
+    catalog returns an empty list without creating storage.
+    """
+    config = (config if config is not None else config_lib.default())._snapshot()
+    store = catalog.Catalog(config.local_settings().storage_root)
+    return [
+        get_experiment(experiment_id, config=config)
+        for experiment_id in store.experiment_ids(project)
+    ]
+
+
 def get_current_experiment():
     try:
         return core._current_experiment.get()
