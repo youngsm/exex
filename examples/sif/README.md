@@ -1,7 +1,7 @@
 # Prebuilt SIF + separately packaged source
 
 This example uses existing APIs: `SingularityContainer(UniversalPackage(...),
-image_path=...)` and `Slurm(singularity_options=SingularityOptions(...))`.
+image_path=...)` and `Slurm(container_options=SingularityOptions(...))`.
 The image supplies Python/PyTorch/CUDA dependencies; the source archive supplies
 `probe.py`. Packaging does not build or pull an image.
 

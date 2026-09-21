@@ -201,7 +201,7 @@ class LocalExecutionTest(parameterized.TestCase):
         job = xm_cluster.ArrayJob(
             executable,
             executor=xm_cluster.Local(
-                singularity_options=xm_cluster.SingularityOptions(
+                container_options=xm_cluster.SingularityOptions(
                     extra_options=["--containall"]
                 )
             ),

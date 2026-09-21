@@ -35,6 +35,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
     @abc.abstractmethod
     def _create_job_script_header(
         cls,
+        executable: executables.AppBundle,
         executor: ExecutorType,
         num_array_tasks: Optional[int],
         job_log_dir: str,
@@ -108,6 +109,22 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         if not isinstance(executor, executors.SupportsContainer):
             raise TypeError("Executor should support container configuration")
 
+        if (
+            executable.container_image is not None
+            and executable.container_image.image_type
+            == executables.ContainerImageType.SHIFTER
+        ):
+            return " ".join(
+                create_shifter_command(
+                    image=executable.container_image.name,
+                    options=executor.container_options or executors.ShifterOptions(),
+                    install_dir=install_dir,
+                    args=_rewrite_array_job_command(
+                        f"./{self.JOB_PARAM_NAME}", executable.entrypoint_command
+                    ),
+                )
+            )
+
         if executable.container_image is not None:
             image = executable.container_image.name
             image_type = executable.container_image.image_type
@@ -115,7 +132,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
             if image_type == executables.ContainerImageType.SINGULARITY:
                 get_container_cmd = create_singularity_command
                 singularity_options = (
-                    executor.singularity_options or executors.SingularityOptions()
+                    executor.container_options or executors.SingularityOptions()
                 )
                 bind_mounts = [
                     BindMount(src, dst) for src, dst in singularity_options.bind.items()
@@ -123,7 +140,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
                 runtime_options = [*singularity_options.extra_options]
             elif image_type == executables.ContainerImageType.DOCKER:
                 get_container_cmd = create_docker_command
-                docker_options = executor.docker_options or executors.DockerOptions()
+                docker_options = executor.container_options or executors.DockerOptions()
                 bind_mounts = [
                     BindMount(src, dst) for src, dst in docker_options.volumes.items()
                 ]
@@ -172,12 +189,31 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
             raise TypeError("Only AppBundle is supported")
         executor = cast(executors.SupportsContainer, job.executor)
 
+        image_type = (
+            executable.container_image.image_type
+            if executable.container_image
+            else None
+        )
+        options_type = {
+            None: type(None),
+            executables.ContainerImageType.SINGULARITY: executors.SingularityOptions,
+            executables.ContainerImageType.DOCKER: executors.DockerOptions,
+            executables.ContainerImageType.SHIFTER: executors.ShifterOptions,
+        }[image_type]
+        if executor.container_options is not None and not isinstance(
+            executor.container_options, options_type
+        ):
+            raise TypeError(
+                f"container_options={type(executor.container_options).__name__} "
+                f"does not match the executable's {image_type.value if image_type else 'host'} runtime"
+            )
+
         num_array_tasks = None
         if isinstance(job, array_job.ArrayJob):
             num_array_tasks = len(job.args)
 
         header = self._create_job_script_header(
-            executor, num_array_tasks, job_log_dir, job_name
+            executable, executor, num_array_tasks, job_log_dir, job_name
         )
         prologue = self._create_job_script_prologue(executable, executor)
         install_dir = "$LXM_WORKDIR"
@@ -298,6 +334,29 @@ def create_docker_command(
     cmd.append(f"--env-file={ARG_ESCAPER(env_file)}")
     cmd.extend([shlex.quote(image), *args])
 
+    return cmd
+
+
+def create_shifter_command(
+    *, image: str, options: executors.ShifterOptions, install_dir: str, args: List[str]
+) -> List[str]:
+    # Shifter mounts directories, not the per-job parameter file used by the
+    # other runtimes. Source and job-param.sh stay together on a visible path.
+    cmd = ["shifter", f"--image={shlex.quote(image)}"]
+    if options.modules:
+        cmd.append(f"--module={shlex.quote(','.join(options.modules))}")
+    cmd.extend(
+        f"--volume={shlex.quote(src + ':' + dst)}" for src, dst in options.bind.items()
+    )
+    cmd.extend(map(shlex.quote, options.extra_options))
+    cmd.extend(
+        [
+            f'--workdir="{install_dir}"',
+            f'--env-file="{install_dir}/.environment"',
+            "--",
+            *args,
+        ]
+    )
     return cmd
 
 

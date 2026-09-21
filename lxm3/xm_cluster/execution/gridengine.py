@@ -63,6 +63,7 @@ class GridEngineJobScriptBuilder(
     @classmethod
     def _create_job_script_header(
         cls,
+        executable: executables.AppBundle,
         executor: executors.GridEngine,
         num_array_tasks: Optional[int],
         job_log_dir: str,

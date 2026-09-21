@@ -39,7 +39,7 @@ def main(_):
         },
         walltime=180,
         workdir_root=WORKDIR.value,
-        singularity_options=xc.SingularityOptions(
+        container_options=xc.SingularityOptions(
             bind={
                 str(Path(INPUT.value).resolve()): "/probe-input",
                 str(output): "/probe-output",

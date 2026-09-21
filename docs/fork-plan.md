@@ -57,6 +57,14 @@ from S3DF. Both retain outputs and clean up temporary source. Combined regressio
 270 passed, 2 integration tests deselected. No first-class Shifter runtime, image
 builder, multi-node container collective or pimm migration is claimed by these probes.
 
+The [ShifterContainer addition](shifter-container.md) is implemented: a prepared
+image reference around an existing source package, a single `container_options`
+executor keyword, and a small private data-only base shared with Singularity/Docker.
+It keeps one-entrypoint semantics, native errors and explicit workdir visibility.
+All 334 regressions pass; live typed-API qualification is pending NERSC SSH
+certificate renewal. Image builds/imports, tag resolution and implicit worker
+launch remain outside this API.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its
@@ -206,8 +214,9 @@ independent of scheduling and requires separately authorized destinations.
   `srun`/Shifter driver for NERSC. Resolve existing Shifter images to their native
   IDs before submission; do not equate those IDs with OCI digests. Keep the driver
   outside the container and resolve GPU visibility at the native task boundary.
-  A first-class `ShifterContainer` and automatic preparation/import are separate
-  proposals, not prerequisites for this qualification. Execution-site SIF paths
+  The separately reviewed [ShifterContainer](shifter-container.md) now wraps a
+  single entrypoint; it does not replace native per-task composition. Automatic
+  preparation/import remains deferred. Execution-site SIF paths
   must not be confused with author-local `SingularityContainer.image_path`.
 - Keep actual SIF hashes and immutable cache blob paths, not mutable tag symlinks.
   Resolve mutable references during preparation. Reuse prepared site images rather

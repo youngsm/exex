@@ -4,6 +4,8 @@ import re
 import shlex
 from typing import List, Optional
 
+import attr
+
 from lxm3 import xm
 from lxm3.clusters import slurm
 from lxm3.xm_cluster import array_job
@@ -48,11 +50,22 @@ class SlurmJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Slurm]
     @classmethod
     def _create_job_script_header(
         cls,
+        executable: executables.AppBundle,
         executor: executors.Slurm,
         num_array_tasks: Optional[int],
         job_log_dir: str,
         job_name: str,
     ) -> str:
+        image = executable.container_image
+        if (
+            image is not None
+            and image.image_type == executables.ContainerImageType.SHIFTER
+        ):
+            resources = {**executor.resources, "image": image.name}
+            options = executor.container_options or executors.ShifterOptions()
+            if options.modules:
+                resources["module"] = ",".join(options.modules)
+            executor = attr.evolve(executor, resources=resources)
         job_header = header_from_executor(
             job_name, executor, num_array_tasks, job_log_dir
         )

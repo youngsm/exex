@@ -45,21 +45,39 @@ class SingularityOptions:
 
 @attr.s(auto_attribs=True)
 class DockerOptions:
-    """Options for singularity container.
+    """Options for a Docker container.
 
     Args:
         volumes: Bind-mounted volumes used by the docker runtime.
-        extra_options: Extra commandline options to pass to singularity.
+        extra_options: Extra commandline options to pass to Docker.
     """
 
     volumes: Dict[str, str] = attr.Factory(dict)
     extra_options: Sequence[str] = attr.Factory(list)
 
 
+@attr.s(auto_attribs=True)
+class ShifterOptions:
+    """Native Shifter options, separate from environment-module loading.
+
+    bind maps execution-host directories to existing container directories;
+    append ``:ro`` to a destination for a read-only mount. modules selects
+    Shifter modules, e.g. ["gpu"]. An empty list leaves the site's defaults.
+    extra_options contains native flags such as --clearenv. LXM3 owns image
+    selection and the working directory; do not override them here.
+    """
+
+    bind: Dict[str, str] = attr.Factory(dict)
+    modules: Sequence[str] = attr.Factory(list)
+    extra_options: Sequence[str] = attr.Factory(list)
+
+
+_ContainerOptions = Union[SingularityOptions, DockerOptions, ShifterOptions]
+
+
 @typing.runtime_checkable
 class SupportsContainer(Protocol):
-    singularity_options: Optional[SingularityOptions]
-    docker_options: Optional[DockerOptions]
+    container_options: Optional[_ContainerOptions]
 
 
 @attr.s(auto_attribs=True)
@@ -73,15 +91,17 @@ class Local(xm.Executor, SupportsContainer):
 
     Args:
         requirements: placeholder, no effect right now
-        singularity_options: Options for singularity container
+        container_options: Options matching the executable's container runtime.
+            None uses runtime defaults; a host executable accepts only None.
         workdir_root: Execution-host parent for a temporary unpacked directory.
             None uses the system temporary directory. Only the child is cleaned up.
     """
 
     requirements: JobRequirements = attr.Factory(JobRequirements)
 
-    singularity_options: Optional[SingularityOptions] = None
-    docker_options: Optional[DockerOptions] = None
+    container_options: Optional[_ContainerOptions] = attr.field(
+        default=None, kw_only=True
+    )
 
     workdir_root: Optional[str] = attr.field(default=None, kw_only=True)
 
@@ -120,7 +140,7 @@ class GridEngine(xm.Executor, SupportsContainer):
         max_parallel_tasks: ``-tc``.
         extra_directives: Extra directives to pass to ``qsub``.
         skip_directives: Directives to skip.
-        singularity_options: Options for singularity container.
+        container_options: Options matching the executable's container runtime.
 
     """
 
@@ -162,8 +182,9 @@ class GridEngine(xm.Executor, SupportsContainer):
     extra_directives: Sequence[str] = attr.Factory(list)
     skip_directives: Sequence[str] = attr.Factory(list)
 
-    singularity_options: Optional[SingularityOptions] = None
-    docker_options: Optional[DockerOptions] = None
+    container_options: Optional[_ContainerOptions] = attr.field(
+        default=None, kw_only=True
+    )
 
     cluster: Optional[str] = attr.field(default=None, kw_only=True)
 
@@ -185,6 +206,8 @@ class Slurm(xm.Executor, SupportsContainer):
     workdir_root selects the execution-host parent for a temporary unpacked
     directory. None uses the system temporary directory. Only the child is
     cleaned up; use a shared parent when workers on other nodes need the files.
+    container_options configures the runtime selected by the executable's image;
+    None uses runtime defaults. Host executables accept only None.
     """
 
     requirements: JobRequirements = attr.Factory(JobRequirements)
@@ -193,8 +216,9 @@ class Slurm(xm.Executor, SupportsContainer):
         default=None, converter=_convert_time
     )
 
-    singularity_options: Optional[SingularityOptions] = None
-    docker_options: Optional[DockerOptions] = None
+    container_options: Optional[_ContainerOptions] = attr.field(
+        default=None, kw_only=True
+    )
 
     log_directory: Optional[str] = None
     # Modules to load before running the job

@@ -48,7 +48,7 @@ def test_singularity_gpu_mask_mounts_and_cleanup(tmp_path, exit_code):
     executor = xc.Slurm(
         resources={"gpus-per-node": 1},
         workdir_root=str(root),
-        singularity_options=xc.SingularityOptions(
+        container_options=xc.SingularityOptions(
             bind={str(inputs): "/probe-input", str(outputs): "/probe-output"},
             extra_options=["--cleanenv"],
         ),

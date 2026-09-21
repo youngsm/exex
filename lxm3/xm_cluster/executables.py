@@ -9,6 +9,7 @@ from lxm3 import xm
 class ContainerImageType(enum.Enum):
     DOCKER = "docker"
     SINGULARITY = "singularity"
+    SHIFTER = "shifter"
 
 
 @attr.s(auto_attribs=True)

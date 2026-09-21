@@ -102,7 +102,8 @@ Native hooks are sufficient to test the real execution contract now. They are no
 automatically the best final user-facing API: two scripts expose image/runtime
 placement, environment precedence and site mounts to every application author.
 A small first-class wrapper can remove that repetition, but it needs a separate
-API review. A wrapper around the whole batch entrypoint executes the driver inside
+API review. That review produced [ShifterContainer](shifter-container.md), whose
+verification is recorded separately. A wrapper around the whole batch entrypoint executes the driver inside
 the image; it does not produce `srun ... shifter ...` per task. This distinction
 must remain explicit rather than be hidden behind resource-based auto-launching.
 

@@ -232,6 +232,22 @@ def _package_docker_container(
     return executable
 
 
+def _package_shifter_container(
+    container: cluster_executable_specs.ShifterContainer,
+    packageable: xm.Packageable,
+    artifact_store: artifacts.ArtifactStore,
+    image_cache_dir: str,
+):
+    executable = _PACKAGING_ROUTER(
+        container.entrypoint, packageable, artifact_store, image_cache_dir
+    )
+    executable.container_image = cluster_executables.ContainerImage(
+        name=container.image,
+        image_type=cluster_executables.ContainerImageType.SHIFTER,
+    )
+    return executable
+
+
 def _throw_on_unknown_executable(
     executable: Any,
     packageable: xm.Packageable,
@@ -253,6 +269,7 @@ _PACKAGING_ROUTER = pattern_matching.match(
     _package_python_container,
     _package_singularity_container,
     _package_docker_container,
+    _package_shifter_container,
     _throw_on_unknown_executable,
 )
 

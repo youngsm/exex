@@ -16,13 +16,7 @@ _DOCKER_IMAGE = flags.DEFINE_string("docker_image", None, "Name of docker image"
 def main(_):
     with xm_cluster.create_experiment(experiment_title="basic") as experiment:
         job_requirements = xm_cluster.JobRequirements(ram=8 * xm.GB)
-        executor = xm_cluster.Local(
-            job_requirements,
-            singularity_options=xm_cluster.SingularityOptions(),
-            docker_options=xm_cluster.DockerOptions(
-                extra_options=[f"--user={os.getuid()}:{os.getgid()}"]
-            ),
-        )
+        executor = xm_cluster.Local(job_requirements)
 
         spec = xm_cluster.PythonPackage(
             # This is a relative path to the launcher that contains
@@ -40,6 +34,9 @@ def main(_):
                 image_path=_SINGULARITY_IMAGE.value,
             )
         elif _DOCKER_IMAGE.value is not None:
+            executor.container_options = xm_cluster.DockerOptions(
+                extra_options=[f"--user={os.getuid()}:{os.getgid()}"]
+            )
             spec = xm_cluster.DockerContainer(
                 spec,
                 image=_DOCKER_IMAGE.value,

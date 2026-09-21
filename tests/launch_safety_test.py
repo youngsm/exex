@@ -194,8 +194,11 @@ def test_container_mounts_and_image_are_literal(
         image, executables.ContainerImageType(runtime)
     )
     executor = xc.Local(
-        singularity_options=xc.SingularityOptions(bind={source: destination}),
-        docker_options=xc.DockerOptions(volumes={source: destination}),
+        container_options=(
+            xc.SingularityOptions(bind={source: destination})
+            if runtime == "singularity"
+            else xc.DockerOptions(volumes={source: destination})
+        ),
         workdir_root=str(tmp_path / "work ' $literal") if custom_root else None,
     )
     script = tmp_path / "job.sh"

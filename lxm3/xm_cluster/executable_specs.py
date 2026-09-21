@@ -245,7 +245,18 @@ class PexBinary(job_blocks.ExecutableSpec):
 
 
 @attr.s(auto_attribs=True)
-class SingularityContainer(job_blocks.ExecutableSpec):
+class _ContainerSpec(job_blocks.ExecutableSpec):
+    """Source package paired with an independently prepared runtime image."""
+
+    entrypoint: Union[UniversalPackage, PythonPackage, PexBinary]
+
+    @property
+    def name(self) -> str:
+        return self.entrypoint.name
+
+
+@attr.s(auto_attribs=True)
+class SingularityContainer(_ContainerSpec):
     """An executable that can be executed in a Singularity container.
 
     Attributes:
@@ -268,12 +279,7 @@ class SingularityContainer(job_blocks.ExecutableSpec):
                The image URI will be passed to singularity as is.
     """
 
-    entrypoint: Union[UniversalPackage, PythonPackage, PexBinary]
     image_path: str
-
-    @property
-    def name(self) -> str:
-        return self.entrypoint.name
 
     def __attrs_post_init__(self):
         image_path = self.image_path
@@ -326,17 +332,26 @@ class PythonContainer(job_blocks.ExecutableSpec):
 
 
 @attr.s(auto_attribs=True)
-class DockerContainer(job_blocks.ExecutableSpec):
-    """An executable that can be executed in a Singularity container.
+class DockerContainer(_ContainerSpec):
+    """An executable that can be executed in a Docker container.
 
     Attributes:
         entrypoint: Another ExcutableSpec.
         image: Name of the Docker image.
     """
 
-    entrypoint: Union[UniversalPackage, PythonPackage, PexBinary]
     image: str
 
-    @property
-    def name(self) -> str:
-        return self.entrypoint.name
+
+@attr.s(auto_attribs=True)
+class ShifterContainer(_ContainerSpec):
+    """Run a source package in an image already installed at the execution site.
+
+    image is a native Shifter reference, preferably ``id:<image-id>``. It is
+    passed through unchanged; LXM3 does not build, import or resolve images.
+    The unpacked source must be visible at the same path inside the container;
+    choose an appropriate executor workdir_root (e.g. NERSC's /pscratch).
+    This wraps one entrypoint, not an implicit srun or a worker per node.
+    """
+
+    image: str

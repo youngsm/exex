@@ -13,10 +13,14 @@ For native multi-node execution, the [Slurm step example](examples/slurm_step/RE
 launches two workers with an ordinary `srun` entrypoint and tests failure propagation.
 Prebuilt-container examples cover [SIF execution](examples/sif/README.md) and
 [native Shifter composition](docs/shifter-slice.md), with separate qualification records.
+The [ShifterContainer API](docs/shifter-container.md) wraps one packaged entrypoint
+in an already-installed site image, with explicit bind mounts and Shifter modules.
+Executors take one `container_options` keyword accepting `SingularityOptions`,
+`DockerOptions`, `ShifterOptions` or `None`, matching the executable's runtime.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Durable WorkUnits, retained
-source/output APIs, a first-class Shifter runtime, continuation and Vertex are not
+source/output APIs, container image builds/imports, continuation and Vertex are not
 implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.

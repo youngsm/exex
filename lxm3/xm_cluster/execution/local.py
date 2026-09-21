@@ -40,7 +40,7 @@ class LocalJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Local]
     ARRAY_TASK_ID = "LOCAL_TASK_ID"
     ARRAY_TASK_OFFSET = 1
     JOB_SCRIPT_SHEBANG = "#!/usr/bin/env bash"
-    JOB_ENV_PATTERN = "^(LOCAL_TASK_ID)"
+    JOB_ENV_PATTERN = "^(LOCAL_TASK_ID=|CUDA_VISIBLE_DEVICES=)"
 
     @classmethod
     def _is_gpu_requested(cls, executor: executors.Local) -> bool:
@@ -57,12 +57,13 @@ class LocalJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Local]
     @classmethod
     def _create_job_script_header(
         cls,
+        executable: executables.AppBundle,
         executor: executors.Local,
         num_array_tasks: Optional[int],
         job_log_dir: str,
         job_name: str,
     ) -> str:
-        del executor, num_array_tasks, job_log_dir, job_name
+        del executable, executor, num_array_tasks, job_log_dir, job_name
         return ""
 
     def build(
