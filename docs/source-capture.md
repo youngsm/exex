@@ -5,6 +5,7 @@
 ```python
 SourceTree(entrypoint: ModuleName | CommandList, path=".", *, files=None)
 experiment.freeze(source: SourceTree) -> FrozenSource
+experiment.sources() -> Mapping[str, FrozenSource]
 frozen.id: str
 ```
 
@@ -15,8 +16,9 @@ Both specifications work with the existing `experiment.package()` and
 `SourceTree` is a recipe; `FrozenSource` is the captured value. This distinction
 keeps ordinary launchers short while giving callers an explicit capture boundary
 when they need to edit their checkout before packaging another target. A retained
-tar archive fits this operation: no source catalog, database, build system or
-parallel manifest is needed. Archive headers carry relative names and permissions.
+tar archive fits capture: archive headers carry relative names and permissions,
+with no build system or parallel manifest. The experiment catalog records source
+membership so another process can retrieve the retained value.
 
 ## Use it
 
@@ -71,6 +73,74 @@ For NERSC, change `--target=nersc`, choose site-local output/workdir paths, and 
 `--resource=account=m5238_g --resource=qos=debug --resource=constraint=gpu`.
 This is a tiny CPU-only workload, not a GPU-compute qualification.
 
+## Retrieve and add another run
+
+After the source launcher exits, use its printed experiment/source IDs in a new
+process. The disposable source tree is already gone:
+
+```python
+from lxm3 import xm, xm_cluster as xc
+
+config = xc.Config.from_file("/path/to/lxm.toml")
+with xc.get_experiment(experiment_id, config=config) as experiment:
+    frozen = experiment.sources()[source_id]
+    executor = xc.Slurm(
+        cluster="nersc", walltime=120,
+        resources={"account": "m5238_g", "qos": "debug", "constraint": "gpu", "nodes": 1},
+    )
+    [executable] = experiment.package([xm.Packageable(frozen, executor.Spec())])
+    experiment.add(xm.Job(executable, executor, args=[
+        "--output-dir=/absolute/new/nersc-output",
+        "--message=another run from retained source",
+    ]))
+```
+
+The runnable [extension launcher](../examples/source/extend.py) implements this:
+
+```bash
+lxm3 launch examples/source/extend.py -- \
+  --lxm_config=/path/to/lxm.toml \
+  --experiment_id=EXPERIMENT_ID --source_id=SOURCE_ID \
+  --target=nersc --output_dir=/absolute/new/nersc-output \
+  --resource=account=m5238_g --resource=qos=debug \
+  --resource=constraint=gpu --resource=nodes=1
+```
+
+`--target=local` uses the same retained source locally. New additions get distinct
+WorkUnit IDs; each Slurm addition is an independent `sbatch` submission, not a
+step inside an old allocation. Retrieval itself submits nothing. Loaded WorkUnits
+cannot be resubmitted, and entering/exiting the experiment leaves old work alone.
+New Local jobs retain attached/wait-on-exit behavior; Slurm jobs outlive the launcher.
+
+This slice is append-only: adding the same job twice intentionally creates two
+WorkUnits. Nonempty `identity` raises `NotImplementedError`, rather than silently
+pretending to deduplicate. This applies to direct and generator-produced payloads.
+There is no automatic retry or discovery after a submission/SSH error.
+
+`sources()` returns a fresh mapping of immutable values from the author catalog.
+It does not read/hash archives, upload, replay a launcher or query a scheduler.
+Missing IDs use ordinary mapping `KeyError`; missing/corrupt archives fail during
+packaging before source transfer. Source lookup restores neither a container nor
+dependencies, arguments, environment or resource settings: choose them explicitly.
+
+`freeze()` records membership after successful capture; successful source packaging
+records its captured source too, including captures inside existing container
+wrappers. `package_async()` records at flush, not enqueue. A failed packaging batch
+does not register its implicit captures; an earlier explicit freeze remains saved.
+Reusing a FrozenSource in another experiment also records membership there. Equal
+content IDs share archive bytes; the first membership record retains its cosmetic
+name/location. New captures with different bytes/entrypoints remain separate values.
+
+One `sources` table stores experiment ID, source ID, display name, retained archive
+path and rendered entrypoint. It uses the existing author-side SQLite catalog;
+there is no schema counter, pickle, migration framework, worker database or new
+dependency. Keep the catalog and retained archives accessible. Copying the catalog
+alone does not move its archives. Use a fresh catalog for this development version;
+pre-feature archives are not scanned or retroactively associated with experiments.
+The existing author-host/storage boundary remains; this is not cross-host database
+coordination. Concurrent author-host additions allocate IDs in short transactions,
+outside packaging, network operations and job execution.
+
 ## Capture contract
 
 - Default selection uses [Git's file listing](https://git-scm.com/docs/git-ls-files):
@@ -108,13 +178,12 @@ stable identity and executable bits, capture timing, container composition, corr
 retained bytes, and actual local execution after checkout removal. It also prepares
 one frozen value for two independent staging destinations without its checkout.
 
-The archive persists, but this slice provides **no ID-based lookup/reopen API**.
-Keep the returned value for re-preparation within the launcher. Durable Experiment/
-WorkUnit retrieval, source discovery, retained outputs, publication, continuation
-and pimm migration remain separate work. No dependency build or scheduler behavior
-was added.
+Source lookup and append-only submission after retrieval are now implemented.
+Prepared-executable lookup, keyed submission, retained outputs, publication,
+continuation and pimm migration remain separate work. No dependency build,
+allocation-sharing or scheduler-placement behavior was added.
 
-Regression result: **366 passed, 2 integration tests deselected**, including 32 new
+Original capture regression result: **366 passed, 2 integration tests deselected**, including 32 new
 source-capture cases. Ruff checks, formatting checks and `git diff --check` pass.
 
 ### Live qualification
@@ -144,3 +213,42 @@ Local evidence: `/sdf/group/neutrino/youngsam/representations/lxm3-qualification
 under `source-local-001/result.json` and `local/projects/qualification/`.
 NERSC staging/logs: `/pscratch/sd/y/youngsam/lxm3-qualification-jmeYsG/staging/projects/qualification/`;
 the job writes `source-nersc-001/result.json` under that qualification root.
+
+### Source reuse and append qualification, 2026-09-21
+
+The extended suite passes **453 tests, 2 integration tests deselected**, with 15 new
+reuse cases and expanded capture/inspection coverage. Separate Python processes
+retrieve retained sources after the disposable checkout has been deleted, append
+concurrently to one experiment, and get distinct WorkUnit IDs. Tests cover sync/
+async contexts, arrays, singleton groups, generators, keyed-add rejection, old-unit
+resubmission rejection, corrupt/missing archives, container/queue capture membership
+and new-submission failure isolation. Existing upstream async deprecation warnings
+remain. Ruff, formatting and `git diff --check` pass.
+
+The runnable source launcher created experiment `1790014763042766562` on S3DF,
+removed its disposable checkout before packaging, completed Local WorkUnit 1 and
+exited. A separate `examples/source/extend.py` process retrieved source ID
+`25e75a57235748b2434e6cf244952b05b572c39a31b860b9f685a6ccebc08668` from the new
+catalog and submitted WorkUnit 2 to NERSC as independent job `58703111`.
+
+The remote job and its batch/extern steps completed with exit `0:0` in 6 seconds
+on `nid008329`. A third process awaited completion and retrieved native status/logs.
+Direct hashing confirmed that the remote archive matched the retained/local archive:
+`638da22089c7777c4075e2f3c6bbbf79a6c22f88a19faa3ded4e9a09d7d6c18e`.
+The original WorkUnit record, retained archive and Local application-output bytes
+were unchanged after extension. Remote output preserved literal quotes, dollar
+signs and a newline. The queue has no remaining entry for the new job.
+
+This used one GPU-partition node with a 120-second walltime for a standard-library
+CPU probe, not training or GPU computation. No real checkout was removed, no old
+qualification catalog was migrated, and pimm was untouched.
+
+Author evidence is under
+`/sdf/group/neutrino/youngsam/representations/lxm3-reuse.wctFcV/`:
+`lxm.toml`, `local/experiments.sqlite3`, retained sources/logs and
+`first-local/result.json`. Remote evidence is under
+`/pscratch/sd/y/youngsam/lxm3-reuse-wctFcV/`: staging/logs and
+`second-nersc/result.json`. The generated source-directory cleanup message names
+`source-work/lxm3.b9XmF6sNwH`.
+Read-only filesystem checks also confirmed that directory was removed while its
+parent and the application result remained.

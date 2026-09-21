@@ -10,6 +10,7 @@ import fsspec
 from lxm3 import __version__
 from lxm3 import xm
 from lxm3.xm_cluster import artifacts
+from lxm3.xm_cluster.executable_specs import FrozenSource
 
 
 class Catalog:
@@ -44,6 +45,11 @@ class Catalog:
                     state TEXT DEFAULT 'unknown', message TEXT DEFAULT '',
                     PRIMARY KEY (experiment_id, id)
                 );
+                CREATE TABLE IF NOT EXISTS sources (
+                    experiment_id INTEGER, id TEXT, name TEXT,
+                    archive_path TEXT, entrypoint_command TEXT,
+                    PRIMARY KEY (experiment_id, id)
+                );
             """)
             db.execute(
                 "INSERT INTO experiments VALUES (?, ?, ?, ?)",
@@ -74,6 +80,35 @@ class Catalog:
                 (experiment_id, unit_id),
             )
         return unit_id
+
+    def record_source(self, experiment_id, source):
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO sources VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT (experiment_id, id) DO NOTHING",
+                (
+                    experiment_id,
+                    source.id,
+                    source.name,
+                    source._archive_path,
+                    source._entrypoint_command,
+                ),
+            )
+
+    def sources(self, experiment_id):
+        with self.connect() as db:
+            return {
+                row["id"]: FrozenSource(
+                    row["id"],
+                    row["name"],
+                    row["archive_path"],
+                    row["entrypoint_command"],
+                )
+                for row in db.execute(
+                    "SELECT * FROM sources WHERE experiment_id = ? ORDER BY id",
+                    (experiment_id,),
+                )
+            }
 
     def work_units(self, experiment_id):
         with self.connect() as db:

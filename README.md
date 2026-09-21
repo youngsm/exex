@@ -24,11 +24,14 @@ For later inspection, [get_experiment(), status and logs](docs/inspection.md) re
 saved WorkUnits without replaying the launcher. Local final outcomes and native
 Slurm accounting are supported. [WorkUnit control](docs/control.md) adds native
 Slurm `stop()` and Local/Slurm `wait_until_complete()`, including after reopening.
+`experiment.sources()` retrieves retained source, and a retrieved experiment can
+[accept new independent jobs](docs/source-capture.md#retrieve-and-add-another-run)
+without the original checkout or launcher.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
-are future work, not this slice's release requirements. Reopened-experiment
-submission, Local cancellation, source lookup, retained outputs, container image
-builds/imports, continuation and Vertex are not implemented.
+are future work, not this slice's release requirements. Keyed submission, prepared
+executable lookup, Local cancellation, retained outputs, container image builds/imports,
+continuation and Vertex are not implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers

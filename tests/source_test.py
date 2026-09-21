@@ -125,6 +125,7 @@ def test_identity_ignores_checkout_name_order_and_timestamps(
     assert first.id == second.id
     assert first._archive_path == second._archive_path
     assert first.name != second.name
+    assert experiment.sources() == {first.id: first}
     with pytest.raises(attr.exceptions.FrozenInstanceError):
         first.id = "changed"
 
@@ -210,6 +211,7 @@ def test_explicit_freeze_and_queued_packaging_have_distinct_capture_times(
     source = spec(checkout)
     frozen = experiment.freeze(source)
     queued = experiment.package_async(xm.Packageable(source, xc.Local.Spec()))
+    assert experiment.sources() == {frozen.id: frozen}
     (checkout / "payload.txt").write_text("after queue")
     [earlier] = experiment.package([xm.Packageable(frozen, xc.Local.Spec())])
 
@@ -217,6 +219,7 @@ def test_explicit_freeze_and_queued_packaging_have_distinct_capture_times(
         return await queued
 
     later = asyncio.run(resolve())
+    assert set(experiment.sources()) == {frozen.id, later._source.id}
     with tarfile.open(earlier.resource_uri) as archive:
         assert archive.extractfile("payload.txt").read() == b"captured"
     with tarfile.open(later.resource_uri) as archive:
@@ -242,6 +245,14 @@ def test_existing_container_wrappers_accept_both_source_specs(
         [xm.Packageable(wrapper(source, image), xc.Local.Spec())]
     )
     assert bundle.container_image.name == image
+    retrieved = xc.get_experiment(
+        experiment.experiment_id, config=experiment._config
+    ).sources()
+    assert list(retrieved) == [bundle._source.id]
+    [bare] = experiment.package(
+        [xm.Packageable(retrieved[bundle._source.id], xc.Local.Spec())]
+    )
+    assert bare.container_image is None  # Source lookup does not reconstruct a runtime.
     with tarfile.open(bundle.resource_uri) as archive:
         assert archive.extractfile("payload.txt").read() == b"captured"
 
@@ -289,6 +300,7 @@ def test_invalid_explicit_paths_do_not_become_archives(
     with pytest.raises((ValueError, FileNotFoundError)):
         experiment.freeze(spec(checkout, files=selection))
     assert not list((tmp_path / "store/sources").glob("*.tar"))
+    assert experiment.sources() == {}
 
 
 @pytest.mark.parametrize("kind", ["symlink", "directory", "fifo"])

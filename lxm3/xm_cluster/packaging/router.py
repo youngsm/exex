@@ -145,13 +145,15 @@ def _package_frozen_source(
     deployed_archive_path = _transfer_file(
         artifact_store, source._archive_path, archive_path(f"{source.id}.tar")
     )
-    return cluster_executables.AppBundle(
+    executable = cluster_executables.AppBundle(
         name=source.name,
         entrypoint_command=source._entrypoint_command,
         resource_uri=deployed_archive_path,
         args=packageable.args,
         env_vars=packageable.env_vars,
     )
+    executable._source = source
+    return executable
 
 
 def _package_pdm_project(

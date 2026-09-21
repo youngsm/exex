@@ -72,21 +72,23 @@ The [raw-source slice](source-capture.md) adds `SourceTree`, `FrozenSource` and
 retains selected working-tree files in normalized local archives, with a
 target-independent identity and no build, install, Git mutation or catalog.
 The same frozen value can prepare another site after checkout removal. This
-completes only the capture/re-preparation part of section 2; source discovery,
-prepared-reference persistence and durable Experiment/WorkUnit control remain
-deferred. No pimm or scheduler changes are included.
+originally completed only the capture/re-preparation part of section 2. Source
+lookup and durable control are covered by subsequent slices below;
+prepared-executable persistence remains deferred. No pimm or scheduler changes
+are included.
 All 366 regressions pass. The disposable-source example completed both locally
 and from S3DF to NERSC (job `58681142`, exit 0, 14 seconds), with identical source
 and staged-archive identities after removing the author-side temporary trees.
 
 The [durable inspection slice](inspection.md) adds author-side SQLite metadata,
 `get_experiment()`, actual-ID `work_units()`, Local/Slurm `get_status()` and bounded
-`get_logs()`. Reopening reads saved references, not launchers; it cannot submit.
+`get_logs()`. Reopening reads saved references, not launchers, and submits nothing
+by itself.
 Slurm accounting remains the status authority, without a cached-success fallback.
 This implements reopening/inspection from section 3. The subsequent
 [control slice](control.md) implements the inherited `stop()` for Slurm and
 `wait_until_complete()` for Slurm/Local, including after reopening. Local
-cancellation, keyed submission, discovery, metadata editing, source lookup,
+cancellation, keyed submission, experiment discovery, metadata editing,
 continuation and CLI additions remain deferred. GridEngine launching is unchanged;
 its inspection/control adapter is not part of these slices.
 The inspection slice passed 408 regressions. Separate-process inspection retrieved
@@ -96,6 +98,21 @@ in 6 seconds. With control implemented, all 438 regressions pass. NERSC job
 cancelled through a reopened WorkUnit after 20 seconds of execution. The batch
 step terminated with signal 15 and no allocation remains active. A fresh Local
 array and the earlier successful NERSC job also passed standalone completion waits.
+
+The [source-reuse slice](source-capture.md#retrieve-and-add-another-run) adds
+`experiment.sources()` and append-only additions inside retrieved experiments.
+Freeze and successful source packaging record membership in the existing catalog;
+implicit and queued captures keep their original timing. Loaded WorkUnits cannot
+be resubmitted; new additions get distinct IDs and native submissions. Nonempty
+`identity` is explicitly unsupported until the separate keyed-add implementation.
+There are no pimm changes, allocation-sharing, scheduler retries, new
+dependencies, schema counters or callback serialization. All 453 regressions pass,
+including separate-process concurrent append after deleting a disposable checkout.
+Prepared-executable lookup and complete invocation persistence remain deferred.
+Live qualification retrieved the original source in a new process and added
+WorkUnit 2 to experiment `1790014763042766562`: NERSC job `58703111` completed in
+6 seconds with exit `0:0`. The original Local WorkUnit record/output and source
+archive were unchanged; the remote archive hash matched. No allocation remains.
 
 ## Decision and scope
 

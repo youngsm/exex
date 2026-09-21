@@ -18,9 +18,10 @@ The original inspection patch implemented **reopening and inspection only**;
 [WorkUnit control](control.md) now also supports Slurm cancellation and Local/Slurm
 completion waiting. Reopening
 does not replay Python, contact a scheduler, allocate IDs or submit work. Missing
-experiment IDs raise `xm.NotFoundError` without creating storage. Adding work to a
-reopened experiment is unsupported in this slice, including through a reopened
-WorkUnit. Existing new-experiment sync/async contexts and awaitable `add()` remain.
+experiment IDs raise `xm.NotFoundError` without creating storage. Retrieved
+experiments now support [adding new independent WorkUnits](source-capture.md#retrieve-and-add-another-run)
+inside their submission context. Loaded WorkUnits themselves cannot be resubmitted.
+Sync/async contexts and awaitable `add()` remain.
 
 ## Actual usage
 
@@ -62,10 +63,12 @@ an empty success. `tail=0` returns no lines; negative counts are invalid.
 ## Persistence and observations
 
 - One author-side `experiments.sqlite3` lives in `[local.storage].staging`, beside
-  the existing archives. Two tables hold experiments and WorkUnits: IDs, title,
+  the existing archives. Experiment and WorkUnit tables hold IDs, title,
   project, producing package version, execution endpoint, accepted native job ID,
-  generated job name, log directory, array shape and Local outcomes. No launchers,
-  closures, credentials, job environments or full site profiles are serialized.
+  generated job name, log directory, array shape and Local outcomes. The subsequent
+  source-reuse slice adds a source-membership table; see its separate contract.
+  No launchers, closures, credentials, job environments or full site profiles are
+  serialized.
 - SQLite allocates WorkUnit IDs inside short transactions. No transaction spans
   SSH, packaging, execution or waiting. There is no ORM, schema counter, migration
   framework, daemon, submission retry or remote catalog. Workers do not open SQLite.
@@ -105,8 +108,8 @@ an empty success. `tail=0` returns no lines; negative counts are invalid.
 
 Existing pre-patch jobs are not retroactively imported. GridEngine submissions
 still work, but their inspection adapter is not implemented. Local cancellation,
-keyed submission, discovery/listing, adding to reopened experiments, persistent
-annotations, source lookup, outputs, continuation and new CLI commands remain
+keyed submission, discovery/listing, persistent annotations, prepared-executable
+lookup, outputs, continuation and new CLI commands remain
 separate work. This does not complete section 3 of the broader fork plan.
 
 ## Verification

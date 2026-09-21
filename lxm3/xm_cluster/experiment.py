@@ -81,7 +81,7 @@ class ClusterWorkUnit(xm.WorkUnit):
     ) -> None:
         super().__init__(experiment, experiment._create_task, args, role)
         self._work_unit_id = work_unit_id
-        self._submitted = experiment._reopened
+        self._submitted = False
         self._local_handles = []
         self._non_local_handles = []
 
@@ -91,18 +91,18 @@ class ClusterWorkUnit(xm.WorkUnit):
         args_view: Optional[Mapping[str, Any]],
         identity: str,
     ) -> None:
-        del identity
-        await self._submit_job_for_execution(job_group, args_view)
+        await self._submit_job_for_execution(job_group, identity)
 
     async def _launch_job_config(self, job_config, args_view, identity):
-        del identity
         assert not args_view
         assert isinstance(job_config, array_job_lib.ArrayJob)
-        await self._submit_job_for_execution(job_config, args_view)
+        await self._submit_job_for_execution(job_config, identity)
 
     async def _submit_job_for_execution(
-        self, job: Union[xm.JobGroup, array_job_lib.ArrayJob], args
+        self, job: Union[xm.JobGroup, array_job_lib.ArrayJob], identity
     ):
+        if identity:
+            raise NotImplementedError("Keyed submission is not implemented")
         if self._submitted:
             raise ValueError(
                 "A WorkUnit accepts one payload; reopened units cannot submit"
@@ -258,11 +258,16 @@ class ClusterExperiment(xm.Experiment):
             self._experiment_id = self._catalog.create_experiment(
                 experiment_title, self._project
             )
-        self._async_packager = async_packager.AsyncPackager(
-            functools.partial(
-                packaging.package, config=self._config, project=self._project
-            )
+        self._async_packager = async_packager.AsyncPackager(self._package)
+
+    def _package(self, packageables):
+        executables = packaging.package(
+            packageables, config=self._config, project=self._project
         )
+        for executable in executables:
+            if executable._source is not None:
+                self._catalog.record_source(self.experiment_id, executable._source)
+        return executables
 
     def package(
         self, packageables: Sequence[xm.Packageable] = ()
@@ -277,8 +282,16 @@ class ClusterExperiment(xm.Experiment):
     def freeze(
         self, source: executable_specs.SourceTree
     ) -> executable_specs.FrozenSource:
-        """Capture source now, without building, uploading or submitting a job."""
-        return source_capture.freeze(source, self._config.local_settings().storage_root)
+        """Capture and record source without building, uploading or submitting."""
+        frozen = source_capture.freeze(
+            source, self._config.local_settings().storage_root
+        )
+        self._catalog.record_source(self.experiment_id, frozen)
+        return frozen
+
+    def sources(self) -> Mapping[str, executable_specs.FrozenSource]:
+        """Retrieve retained source values without inspecting or staging their bytes."""
+        return self._catalog.sources(self.experiment_id)
 
     def _create_experiment_unit(
         self,
@@ -287,9 +300,8 @@ class ClusterExperiment(xm.Experiment):
         identity: str = "",
     ) -> Awaitable[ClusterWorkUnit]:
         """Creates a new WorkUnit instance for the experiment."""
-        del identity  # Unused.
-        if self._reopened:
-            raise NotImplementedError("Reopened experiments cannot submit work")
+        if identity:
+            raise NotImplementedError("Keyed submission is not implemented")
         if not isinstance(role, xm.WorkUnitRole):
             raise NotImplementedError("Auxiliary units are not supported")
         future = asyncio.Future(loop=self._event_loop)
@@ -334,7 +346,9 @@ class ClusterExperiment(xm.Experiment):
     def work_units(self):
         for unit_id in self._catalog.work_units(self.experiment_id):
             if unit_id not in self._work_units:
-                self._work_units[unit_id] = ClusterWorkUnit(self, unit_id)
+                unit = ClusterWorkUnit(self, unit_id)
+                unit._submitted = True
+                self._work_units[unit_id] = unit
         return dict(self._work_units)
 
     @property

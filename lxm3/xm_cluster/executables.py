@@ -4,6 +4,7 @@ from typing import Dict, Optional
 import attr
 
 from lxm3 import xm
+from lxm3.xm_cluster.executable_specs import FrozenSource
 
 
 class ContainerImageType(enum.Enum):
@@ -27,3 +28,4 @@ class AppBundle(xm.Executable):
     container_image: Optional[ContainerImage] = None
     # Set by packaging; handwritten bundles retain their existing behavior.
     _target: Optional[tuple] = attr.field(default=None, init=False, repr=False)
+    _source: Optional[FrozenSource] = attr.field(default=None, init=False, repr=False)

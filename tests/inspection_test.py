@@ -170,8 +170,7 @@ def test_reopen_is_read_only_and_does_not_replay_or_poll(config, tmp_path):
         assert list(reopened.work_units()) == [1]
         assert reopened.work_units()[1].work_unit_id == 1
         assert reopened._project == "test"
-        with pytest.raises(NotImplementedError, match="cannot submit"):
-            reopened.add(None)
+        assert len(reopened.sources()) == 1
     assert database.read_bytes() == before
 
 

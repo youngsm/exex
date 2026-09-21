@@ -14,7 +14,8 @@ unit.wait_until_complete() -> xm.WorkUnitCompletedAwaitable
 
 `stop()` supports Slurm, including a reopened WorkUnit and a whole array. Waiting
 supports Slurm and attached/reopened Local. Local cancellation and GridEngine
-control are not implemented. Reopening still cannot submit more work.
+control are not implemented. Retrieved experiments now support
+[append-only submission and retained source reuse](source-capture.md#retrieve-and-add-another-run).
 
 This keeps the existing Experiment/WorkUnit model and async wrapper. No new
 dependencies, schema changes, process manager, scheduler-discovery path or retries
