@@ -159,7 +159,7 @@ class ClusterWorkUnit(xm.WorkUnit):
     @property
     def job(self) -> Union[xm.Job, array_job_lib.ArrayJob, None]:
         """Independent snapshot of the concrete request, not proof of acceptance."""
-        record = self._record["job"]
+        record = self._record.get("job")
         return job_snapshot.loads(record) if record is not None else None
 
     @property

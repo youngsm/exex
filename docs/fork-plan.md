@@ -147,8 +147,12 @@ All 498 regressions pass, with 2 integration tests deselected. Fresh processes
 retrieved exact scripts and successful native outcomes for S3DF array `38742940`
 and S3DF-to-NERSC job `58708625`, including with cluster profiles removed from the
 reader config. The [qualification record](inspection.md#job-history-qualification-2026-09-21)
-retains IDs and hashes. There are no pimm changes, new dependencies, migrations,
-schema counters, retries or artifact/continuation work in this slice.
+retains IDs and hashes. Existing catalogs now gain the two nullable history columns
+on the first new WorkUnit, atomically with ID allocation; inspection stays read-only
+and existing records are preserved without backfilling. There are no pimm changes,
+new dependencies, migration framework, schema counters, retries or
+artifact/continuation work in this slice.
+Five additional upgrade regressions bring the suite to 503 passing tests.
 
 ## Decision and scope
 

@@ -161,9 +161,12 @@ can contain secrets: protect the catalog and staging directory accordingly. No
 launcher replay, executable registry or automatic rerun command is introduced.
 
 History uses `work_units.job` (one JSON snapshot) and `work_units.script_path` in
-the author catalog; no extra files, ORM, dependency or schema counter. This
-development slice uses a fresh catalog. Existing catalogs are not migrated or
-backfilled; keep their matching checkout and staging data for historical reads.
+the author catalog; no extra files, ORM, dependency or schema counter. Keep using
+your existing catalog. The first new WorkUnit adds any missing history columns
+inside the existing ID-allocation transaction. Existing records are preserved;
+inspection alone never upgrades or writes the database. Older WorkUnits return
+`None` for job/source metadata and have no recorded script reference, both before
+and after the upgrade. No historical values are inferred or backfilled.
 
 ## Persistence and observations
 
@@ -220,6 +223,15 @@ lookup, outputs and continuation remain
 separate work. This does not complete section 3 of the broader fork plan.
 
 ## Verification
+
+### Existing-catalog upgrade
+
+**503 tests pass, 2 integration tests deselected** after the additive upgrade fix.
+Five new cases cover unchanged read-only access, Local submissions into both
+reopened and new experiments in an old catalog, concurrent first writers, and
+transaction rollback. An inspection of the earlier S3DF/NERSC CLI qualification
+catalog also returned empty history correctly and left its database hash unchanged.
+No new scheduler jobs were needed for this author-side database change.
 
 ### Job history qualification, 2026-09-21
 

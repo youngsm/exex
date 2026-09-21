@@ -96,7 +96,7 @@ def _hostname(record):
 
 
 def get_script(record):
-    if record["script_path"] is None:
+    if record.get("script_path") is None:
         raise xm.NotFoundError("No submission script has been recorded")
     return ssh.run(
         ["cat", "--", record["script_path"]],

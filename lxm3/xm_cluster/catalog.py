@@ -85,6 +85,12 @@ class Catalog:
     def create_work_unit(self, experiment_id):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            # Upgrade under the same writer lock as ID allocation, never on reads.
+            columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(work_units)")
+            }
+            for name in sorted({"job", "script_path"} - columns):
+                db.execute(f"ALTER TABLE work_units ADD COLUMN {name} TEXT")
             unit_id = db.execute(
                 "SELECT COALESCE(MAX(id), 0) + 1 FROM work_units WHERE experiment_id = ?",
                 (experiment_id,),
