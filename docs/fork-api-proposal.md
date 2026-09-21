@@ -283,6 +283,11 @@ second management database. See the [CLI contract](inspection.md#command-line).
 
 ## 7. Next review: artifact and continuation extension
 
+The [retained-output slice](outputs.md) implements only `add(..., outputs=...)`,
+`artifacts(*, task=None)`, `Artifact.id` and `Artifact.fetch(into)` below. Inputs,
+attempt selection, publication, continuation and links remain proposals, not
+implemented parameters or release requirements.
+
 These are exact proposed signatures for the next slice, not part of the first patch.
 Mappings are copied into frozen intent.
 

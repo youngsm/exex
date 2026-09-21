@@ -69,16 +69,25 @@ class LocalJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Local]
         return ""
 
     def build(
-        self, job: job_script_builder.JobType, job_name: str, job_log_dir: str
+        self,
+        job: job_script_builder.JobType,
+        job_name: str,
+        job_log_dir: str,
+        *,
+        outputs=None,
     ) -> str:
         assert isinstance(job.executor, executors.Local)
         assert isinstance(job.executable, executables.AppBundle)
-        return super().build(job, job_name, job_log_dir)
+        return super().build(job, job_name, job_log_dir, outputs=outputs)
 
 
 class LocalExecutionHandle:
     def __init__(
-        self, future: concurrent.futures.Future, log_directory: str, script_path=None
+        self,
+        future: concurrent.futures.Future,
+        log_directory: str,
+        script_path=None,
+        artifact_directory=None,
     ) -> None:
         self.future = future
         self.record = dict(
@@ -87,6 +96,7 @@ class LocalExecutionHandle:
             username=getpass.getuser(),
             log_directory=log_directory,
             script_path=script_path,
+            artifact_directory=artifact_directory,
         )
 
     async def wait(self) -> None:
@@ -111,14 +121,14 @@ class LocalClient:
     def artifact_store(self):
         return self._artifact_store
 
-    def launch(self, job_name: str, job: job_script_builder.JobType):
+    def launch(self, job_name: str, job: job_script_builder.JobType, *, outputs=None):
         job_name = re.sub("\\W", "_", job_name)
 
         job_log_dir = job_script_builder.job_log_path(job_name)
         self._artifact_store.ensure_dir(job_log_dir)
         job_log_dir = self._artifact_store.normalize_path(job_log_dir)
         builder = self.builder_cls()
-        job_script_content = builder.build(job, job_name, job_log_dir)
+        job_script_content = builder.build(job, job_name, job_log_dir, outputs=outputs)
         job_script_path = self._artifact_store.put_text(
             job_script_content, job_script_builder.job_script_path(job_name)
         )
@@ -151,7 +161,14 @@ class LocalClient:
                     )
 
             future = local_executor().submit(task, i)
-            handles.append(LocalExecutionHandle(future, job_log_dir, job_script_path))
+            handles.append(
+                LocalExecutionHandle(
+                    future,
+                    job_log_dir,
+                    job_script_path,
+                    os.path.join(job_log_dir, "artifacts") if outputs else None,
+                )
+            )
 
         return handles
 
@@ -175,7 +192,12 @@ def _local_job_predicate(job):
 
 
 async def launch(
-    job_name: str, job, *, config: config_lib.Config, project: Optional[str]
+    job_name: str,
+    job,
+    *,
+    config: config_lib.Config,
+    project: Optional[str],
+    outputs=None,
 ):
     jobs = job_script_builder.flatten_job(job)
     jobs = [job for job in jobs if _local_job_predicate(job)]
@@ -189,5 +211,5 @@ async def launch(
         )
 
     return client(settings=config.local_settings(), project=project).launch(
-        job_name, jobs[0]
+        job_name, jobs[0], outputs=outputs
     )

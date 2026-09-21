@@ -41,7 +41,7 @@ class Catalog:
                     experiment_id INTEGER, id INTEGER,
                     backend TEXT, hostname TEXT, username TEXT,
                     native_id TEXT, job_name TEXT, log_directory TEXT,
-                    job TEXT, script_path TEXT,
+                    job TEXT, script_path TEXT, outputs TEXT, artifact_directory TEXT,
                     task_count INTEGER DEFAULT 1, is_array INTEGER DEFAULT 0,
                     state TEXT DEFAULT 'unknown', message TEXT DEFAULT '',
                     PRIMARY KEY (experiment_id, id)
@@ -89,7 +89,9 @@ class Catalog:
             columns = {
                 row["name"] for row in db.execute("PRAGMA table_info(work_units)")
             }
-            for name in sorted({"job", "script_path"} - columns):
+            for name in sorted(
+                {"job", "script_path", "outputs", "artifact_directory"} - columns
+            ):
                 db.execute(f"ALTER TABLE work_units ADD COLUMN {name} TEXT")
             unit_id = db.execute(
                 "SELECT COALESCE(MAX(id), 0) + 1 FROM work_units WHERE experiment_id = ?",

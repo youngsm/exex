@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import json
 import subprocess
 from typing import Any, Awaitable, Mapping, Optional, Sequence, Union
 
@@ -18,6 +19,7 @@ from lxm3.xm_cluster import executable_specs
 from lxm3.xm_cluster import inspection
 from lxm3.xm_cluster import job_snapshot
 from lxm3.xm_cluster import metadata
+from lxm3.xm_cluster import outputs as output_lib
 from lxm3.xm_cluster import packaging
 from lxm3.xm_cluster.execution import gridengine as gridengine_execution
 from lxm3.xm_cluster.execution import job_script_builder
@@ -42,6 +44,7 @@ async def _launch(
     *,
     config: config_lib.Config,
     project: Optional[str],
+    outputs=None,
 ):
     local_handles = []
     non_local_handles = []
@@ -58,13 +61,19 @@ async def _launch(
             )
 
     local_handles.extend(
-        await local_execution.launch(job_name, job, config=config, project=project)
+        await local_execution.launch(
+            job_name, job, config=config, project=project, outputs=outputs
+        )
     )
     non_local_handles.extend(
-        await slurm_execution.launch(job_name, job, config=config, project=project)
+        await slurm_execution.launch(
+            job_name, job, config=config, project=project, outputs=outputs
+        )
     )
     non_local_handles.extend(
-        await gridengine_execution.launch(job_name, job, config=config, project=project)
+        await gridengine_execution.launch(
+            job_name, job, config=config, project=project, outputs=outputs
+        )
     )
 
     return _LaunchResult(local_handles, non_local_handles)
@@ -123,6 +132,7 @@ class ClusterWorkUnit(xm.WorkUnit):
                 job,
                 config=self.experiment._config,
                 project=self.experiment._project,
+                outputs=json.loads(self._record.get("outputs") or "{}"),
             )
             self._ingest_handles(launch_result)
         except Exception as error:
@@ -171,6 +181,12 @@ class ClusterWorkUnit(xm.WorkUnit):
     def get_script(self) -> str:
         """Read the saved script from the recorded execution endpoint."""
         return inspection.get_script(self._record)
+
+    def artifacts(
+        self, *, task: Optional[int] = None
+    ) -> Mapping[str, output_lib.Artifact]:
+        """Retrieve completed output handles from the recorded site, without fetching bytes."""
+        return output_lib.artifacts(self._record, task=task)
 
     def stop(
         self,
@@ -297,6 +313,27 @@ class ClusterExperiment(xm.Experiment):
     def package_async(self, packageable: xm.Packageable) -> Awaitable[xm.Executable]:
         """Queue a specification; package() performs the build and transfer."""
         return self._async_packager.add(packageable)
+
+    def add(
+        self,
+        job,
+        args=None,
+        *,
+        role=xm.WorkUnitRole(),
+        identity="",
+        outputs: Optional[Mapping[str, str]] = None,
+    ):
+        """Add one payload, optionally retaining named paths beneath LXM_OUTPUT_DIR."""
+        declared = output_lib.declarations(outputs)
+        if not declared:
+            return super().add(job, args, role=role, identity=identity)
+
+        async def with_outputs(unit, **overrides):
+            unit._save(outputs=json.dumps(declared))
+            await unit.add(job, overrides or None)
+
+        role = job.role if isinstance(job, xm.AuxiliaryUnitJob) else role
+        return super().add(with_outputs, args, role=role, identity=identity)
 
     def freeze(
         self, source: executable_specs.SourceTree

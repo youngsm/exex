@@ -6,7 +6,7 @@ build-backend = "pdm.backend"
 name = "lxm3"
 description = 'LXM3: XManager launch backend for HPC clusters'
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10.12,<3.13,!=3.11.0,!=3.11.1,!=3.11.2,!=3.11.3"
 license = {text = "MIT"}
 keywords = ["machine-learning", "hpc", "packaging", "singularity"]
 authors = [{ name = "Yicheng Luo", email = "ethanluoyc@gmail.com" }]

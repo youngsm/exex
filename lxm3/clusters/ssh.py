@@ -28,7 +28,7 @@ def run(argv, *, hostname=None, username=None, **options):
 
 
 class OpenSSHFileSystem(fsspec.AbstractFileSystem):
-    """Only the file operations used by ArtifactStore; no remote Python required."""
+    """Staging and result-file operations; no remote Python required."""
 
     cachable = False
 
@@ -68,6 +68,10 @@ class OpenSSHFileSystem(fsspec.AbstractFileSystem):
     def put_file(self, lpath, rpath, **kwargs):
         with open(lpath, "rb") as source:
             self._run(["sh", "-c", 'cat > "$1"', "sh", rpath], stdin=source)
+
+    def get_file(self, rpath, lpath, **kwargs):
+        with open(lpath, "wb") as destination:
+            self._run(["cat", "--", rpath], stdout=destination, text=False)
 
     def pipe_file(self, path, value, **kwargs):
         self._run(["sh", "-c", 'cat > "$1"', "sh", path], input=value, text=False)

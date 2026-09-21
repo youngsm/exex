@@ -1,6 +1,6 @@
 # LXM3 fork: implementation delta
 
-Status: minimal HPC launcher slice, 2026-09-20. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
+Status: retained-output slice, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
 Upstream: [ethanluoyc/lxm3](https://github.com/ethanluoyc/lxm3), commit
 `30f55855e595ee7d8397daacb1475442265f37ef`. The
 [API proposal](fork-api-proposal.md) defines the broader method-level changes.
@@ -153,6 +153,20 @@ and existing records are preserved without backfilling. There are no pimm change
 new dependencies, migration framework, schema counters, retries or
 artifact/continuation work in this slice.
 Five additional upgrade regressions bring the suite to 503 passing tests.
+
+The [retained-output slice](outputs.md) adds only `add(..., outputs=...)`,
+`WorkUnit.artifacts(task=...)`, `Artifact.id` and `Artifact.fetch(into)`. A small
+embedded standard-library helper snapshots declared files/directories after success,
+before working-directory cleanup, without a worker LXM3 install or SQLite access.
+Each task publishes its complete result set together; missing required outputs fail
+the job. Retrieval uses the recorded endpoint, verifies archive bytes and never
+overwrites existing destinations. No inputs, publication, retry/continuation,
+per-attempt history, automatic upload or pimm changes are included.
+All 525 regressions pass, with 2 integration tests deselected. Fresh-process file
+and directory retrieval passed locally and on S3DF/Singularity (`38745384`) and
+S3DF-to-NERSC/Shifter (`58710267`). Missing-output probes (`38745552`, `58710289`)
+failed as expected and exposed no partial results. All jobs are terminal and
+temporary working directories were cleaned; see the linked qualification record.
 
 ## Decision and scope
 

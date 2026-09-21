@@ -77,11 +77,16 @@ class GridEngineJobScriptBuilder(
         return job_header
 
     def build(
-        self, job: job_script_builder.JobType, job_name: str, job_log_dir: str
+        self,
+        job: job_script_builder.JobType,
+        job_name: str,
+        job_log_dir: str,
+        *,
+        outputs=None,
     ) -> str:
         assert isinstance(job.executor, self.executor_cls)
         assert isinstance(job.executable, self.executable_cls)
-        return super().build(job, job_name, job_log_dir)
+        return super().build(job, job_name, job_log_dir, outputs=outputs)
 
 
 class GridEngineHandle:
@@ -110,13 +115,13 @@ class GridEngineClient:
     def artifact_store(self):
         return self._artifact_store
 
-    def launch(self, job_name: str, job: job_script_builder.JobType):
+    def launch(self, job_name: str, job: job_script_builder.JobType, *, outputs=None):
         job_name = re.sub("\\W", "_", job_name)
         job_log_dir = job_script_builder.job_log_path(job_name)
         self._artifact_store.ensure_dir(job_log_dir)
         job_log_dir = self._artifact_store.normalize_path(job_log_dir)
         builder = self.builder_cls()
-        job_script_content = builder.build(job, job_name, job_log_dir)
+        job_script_content = builder.build(job, job_name, job_log_dir, outputs=outputs)
         job_script_path = self._artifact_store.put_text(
             job_script_content, job_script_builder.job_script_path(job_name)
         )
@@ -139,6 +144,9 @@ class GridEngineClient:
                 if self._settings.hostname
                 else getpass.getuser(),
                 script_path=job_script_path,
+                artifact_directory=os.path.join(job_log_dir, "artifacts")
+                if outputs
+                else None,
             )
         ]
 
@@ -175,7 +183,12 @@ def _sge_job_predicate(job):
 
 
 async def launch(
-    job_name: str, job, *, config: config_lib.Config, project: Optional[str]
+    job_name: str,
+    job,
+    *,
+    config: config_lib.Config,
+    project: Optional[str],
+    outputs=None,
 ) -> List[GridEngineHandle]:
     jobs = job_script_builder.flatten_job(job)
     jobs = [job for job in jobs if _sge_job_predicate(job)]
@@ -189,7 +202,9 @@ async def launch(
         )
 
     settings = config.cluster_settings(jobs[0].executor.cluster)
-    return client(settings=settings, project=project).launch(job_name, jobs[0])
+    return client(settings=settings, project=project).launch(
+        job_name, jobs[0], outputs=outputs
+    )
 
 
 def _format_time(duration_seconds: int) -> str:

@@ -6,7 +6,9 @@ This is the `youngsm/lxm3` fork of `ethanluoyc/lxm3`. The current release bounda
 the [minimal HPC launcher](docs/minimal-hpc-slice.md): existing launch/packaging APIs,
 explicit sites, system OpenSSH for Slurm, reliable package staging and ordinary
 subprocess failures. Start with the runnable [HPC probe](examples/hpc/launch.py).
-Outputs are application-owned paths; local stdout/stderr go to the printed log path.
+Local stdout/stderr go to the printed log path. Applications can use their own
+output paths or opt into [retained outputs](docs/outputs.md) with
+`experiment.add(..., outputs=...)`, `unit.artifacts()` and `artifact.fetch(...)`.
 `Local(workdir_root=...)` and `Slurm(workdir_root=...)` choose the execution-host
 parent for temporary unpacked source; see [working directories](docs/minimal-hpc-slice.md#working-directories).
 For native multi-node execution, the [Slurm step example](examples/slurm_step/README.md)
@@ -36,7 +38,7 @@ without replaying a launcher. History does not imply hermetic reproducibility.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Keyed submission, prepared
-executable lookup, Local cancellation, retained outputs, container image builds/imports,
+executable lookup, Local cancellation, artifact inputs/publication, container image builds/imports,
 continuation and Vertex are not implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
