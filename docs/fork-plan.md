@@ -125,7 +125,15 @@ prepared-executable persistence, keyed submissions, artifacts or pimm changes.
 All 479 regressions pass, including 26 new discovery/CLI cases. Separate CLI
 processes listed the existing qualification experiment and read successful native
 NERSC status/stdout for job `58703111`, leaving the catalog unchanged. No new job
-or live cancellation was needed for this slice.
+or live cancellation was needed for that initial check. Subsequent
+[fresh CLI qualification](inspection.md#fresh-slurm-cli-qualification-2026-09-21)
+submitted and cancelled running shell probes on S3DF (`38740189`, one A100 on
+`neutrino:default@ampere` / `preemptable`) and NERSC (`58706742`, one debug GPU
+node). Discovery, running status, logs, explicit CLI cancellation and stopped
+status passed from separate S3DF processes. Native accounting confirmed cancellation
+after 75/91 seconds respectively. All steps are terminal and neither job remains in
+its queue. No implementation changes were needed; this is scheduler/control evidence,
+not GPU-compute or array-cancellation qualification.
 
 ## Decision and scope
 

@@ -170,9 +170,48 @@ Read-only CLI qualification on 2026-09-21 used the existing S3DF author config a
 and NERSC WorkUnit 2 completed, with native job `58703111` at `COMPLETED 0:0`.
 `logs ... 2 --tail 20` retrieved the retained stdout from `nid008329`, including
 literal quoted/dollar-sign/newline content. The catalog hash was unchanged.
-No new jobs were submitted and no live cancellation was issued for this slice;
+No new jobs were submitted and no live cancellation was issued for that initial check;
 CLI cancellation delegates to the previously qualified method and is tested with
-a mocked native transport. The original inspection qualification follows.
+a mocked native transport. Fresh CLI qualification is recorded below.
+
+### Fresh Slurm CLI qualification, 2026-09-21
+
+The existing `examples/control/launch.py` submits a shell start marker and a
+300-second sleep with a 360-second walltime. The author-side config/catalog is
+isolated under
+`/sdf/group/neutrino/youngsam/representations/lxm3-cli-qualification.XxHs4S/`.
+Commands run as independent CLI processes from S3DF after the launcher exits.
+
+| Site | Experiment ID | Native job | Execution host | CLI result |
+| --- | --- | --- | --- | --- |
+| S3DF | 1790020578840469011 | 38740189 | sdfampere010 | Running status, stdout, explicit stop, then stopped status and retained logs |
+| S3DF → NERSC | 1790020574307581110 | 58706742 | nid002240 | Queued then running status, remote stdout, explicit stop, then stopped status and retained logs |
+
+The S3DF probe used `neutrino:default@ampere`, QoS `preemptable`, one A100,
+one requested CPU and 1 GiB host memory. Native accounting confirmed allocation
+cancellation after 75 seconds, batch cancellation with exit `0:15` after 76 seconds,
+and extern completion after 77 seconds.
+
+The NERSC probe used `m5238_g`, debug QoS, `constraint=gpu` and one node (the
+site allocated four A100s). Native accounting confirmed allocation cancellation
+after 91 seconds, batch cancellation with exit `0:15` after 92 seconds, and extern
+completion after 93 seconds. One independent post-cancellation SSH check timed
+out; separate explicit read-only checks then confirmed accounting and an empty
+queue. Cancellation was not resent, and no library retry logic was added.
+
+On both sites the launcher had exited before the CLI inspected or stopped work.
+`experiments --project qualification` discovered both entries. `status` observed
+native running state before `stop`, and `stopped` afterward; `logs --tail 20`
+returned both the start marker and, after cancellation, Slurm's termination
+message. The native queues contain neither test job, and all recorded steps are
+terminal. Scripts, logs and source archives remain in the isolated staging paths;
+NERSC staging is `/pscratch/sd/y/youngsam/lxm3-cli-qualification-XxHs4S/staging`.
+
+No implementation changes or pimm changes were needed. These are single-WorkUnit
+scheduler/log/control checks, not GPU-computation, array-cancellation, distributed
+training or checkpoint-continuation qualification.
+
+### Original inspection regressions
 
 `tests/inspection_test.py` launches and reopens Local successes/failures in separate
 Python processes. It covers read-only retrieval, missing IDs, ID allocation,
