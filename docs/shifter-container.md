@@ -94,10 +94,44 @@ and verifies that a mismatch never reaches scheduler submission.
 Regression result: **334 passed, 2 integration tests deselected**, with 41 existing
 deprecation warnings. Ruff and `git diff --check` pass.
 
-Live typed-API qualification is **pending**, not implied by these tests or the
-earlier native-shell qualification. The 2026-09-20 attempt stopped at SSH preflight:
-NERSC rejected authentication after the SSH certificate expired at 23:10:30 PDT.
-No typed-API GPU jobs were submitted. After certificate renewal, run success and
-`--fail` probes into separate empty output directories. Verify Slurm exit codes
-0/7, pinned image ID, GPU results and masks, read-only input, literal values,
-retained results, and removal of only each temporary source directory.
+### Live typed-API qualification
+
+Qualified from S3DF to NERSC on 2026-09-20 PDT (2026-09-21 UTC), using commit
+`75a3eca`. The initial expired-certificate preflight was resolved by certificate
+renewal; no runtime or library fix was needed. Both jobs used the public launcher
+above, the same staged source archive and the preinstalled pinned CuPy image.
+
+| Probe | Job | Node | State | Exit code | Elapsed |
+| --- | --- | --- | --- | --- | --- |
+| Success | 58678901 | nid003201 | COMPLETED | 0:0 | 21 s |
+| Intentional failure | 58678913 | nid003468 | FAILED | 7:0 | 21 s |
+
+Both ran a real CuPy sum-of-squares calculation on an A100-SXM4-40GB, producing
+`357389824.0`. Both preserved literal argument/environment values, read the input
+through `/mnt:ro`, verified that writing there failed with `EROFS`, and retained
+`result.json` through the writable `/media` mount, including after exit 7.
+`--clearenv` was enabled. The recorded full image ID matched the pinned reference.
+
+Each batch process saw `CUDA_VISIBLE_DEVICES=0,1,2,3` and four devices, matching
+the four-GPU allocation. The small calculation used device 0; this is not a
+multi-GPU computation or a per-task GPU-isolation qualification. No implicit
+`srun` or worker replication was introduced.
+
+Source SHA-256: `7f774b9656334bebbb2720ec2c29d13c52b71f7732f017fa528207f96e52bb08`.
+Archive SHA-256: `2de084b30d5bd3417f9d4ca725cba3bbd90986c4f4d12e586e4f4dfad371136f`.
+Both results report the same source hash as the committed worker. The staged
+archive was independently hashed after execution and matched its filename.
+
+Evidence remains on NERSC beneath
+`/pscratch/sd/y/youngsam/lxm3-qualification-jmeYsG/`:
+
+- Results: `shifter-typed-success-001/result.json` and
+  `shifter-typed-failure-001/result.json`.
+- Generated scripts/logs: `staging/projects/qualification/{jobs,logs}/`, under
+  `shifter_container_probe_1789971830265033542_1` and
+  `shifter_container_probe_1789971831313451936_1`, respectively.
+
+Direct filesystem checks confirmed that only the temporary source children
+`shifter-work/lxm3.L2zjbZ7Iw2` and `shifter-work/lxm3.kHh1dnGdjt` were removed;
+the shared parent, input and result files remain. Both allocations are terminal.
+The committed-code regression rerun remained **334 passed, 2 deselected**.

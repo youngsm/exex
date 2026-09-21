@@ -61,9 +61,11 @@ The [ShifterContainer addition](shifter-container.md) is implemented: a prepared
 image reference around an existing source package, a single `container_options`
 executor keyword, and a small private data-only base shared with Singularity/Docker.
 It keeps one-entrypoint semantics, native errors and explicit workdir visibility.
-All 334 regressions pass; live typed-API qualification is pending NERSC SSH
-certificate renewal. Image builds/imports, tag resolution and implicit worker
-launch remain outside this API.
+All 334 regressions pass. S3DF-to-NERSC typed-API jobs `58678901` and `58678913`
+qualified real GPU computation, mounts, literal values, success/exit-7 propagation
+and temporary-source cleanup. Both ran for 21 seconds; results were retained.
+Image builds/imports, tag resolution and implicit worker launch remain outside
+this API.
 
 ## Decision and scope
 
