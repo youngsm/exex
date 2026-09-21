@@ -1,7 +1,9 @@
 import datetime
+import getpass
 import os
 import re
 import shlex
+import socket
 from typing import List, Optional
 
 import attr
@@ -80,8 +82,9 @@ class SlurmJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Slurm]
 
 
 class SlurmHandle:
-    def __init__(self, job_id: str) -> None:
+    def __init__(self, job_id: str, **record) -> None:
         self.job_id = job_id
+        self.record = dict(backend="slurm", native_id=job_id, **record)
 
 
 class SlurmClient:
@@ -118,13 +121,30 @@ class SlurmClient:
             num_jobs = len(job.env_vars)
         else:
             num_jobs = 1
+        log_directory = job.executor.log_directory or job_log_dir
+        if not os.path.isabs(log_directory):
+            log_directory = (
+                self._artifact_store.filesystem.abspath(log_directory)
+                if self._settings.hostname
+                else os.path.abspath(log_directory)
+            )
         console.info(f"Launching {num_jobs} job on {self._settings.hostname}")
         job_id = self._cluster.launch(job_script_path)
         console.info(f"Successfully launched job {job_id}")
         console.info(f"Logs: {job_log_dir}; script: {job_script_path}")
         self._artifact_store.put_text(str(job_id), f"jobs/{job_name}/job_id")
 
-        handles = [SlurmHandle(job_id)]
+        handles = [
+            SlurmHandle(
+                job_id,
+                hostname=self._settings.hostname or socket.gethostname(),
+                username=self._settings.user
+                if self._settings.hostname
+                else getpass.getuser(),
+                job_name=job_name,
+                log_directory=log_directory,
+            )
+        ]
 
         return handles
 

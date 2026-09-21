@@ -1,3 +1,4 @@
+from concurrent import futures
 from unittest import mock
 
 from absl.testing import absltest
@@ -26,6 +27,11 @@ staging = "/home/foo/lxm3-staging"
 
 
 class DummyHandle:
+    def __init__(self):
+        self.record = {"backend": "local"}
+        self.future = futures.Future()
+        self.future.set_result(None)
+
     async def wait(self):
         return
 

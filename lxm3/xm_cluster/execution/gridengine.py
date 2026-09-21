@@ -85,6 +85,7 @@ class GridEngineJobScriptBuilder(
 class GridEngineHandle:
     def __init__(self, job_id: str) -> None:
         self.job_id = job_id
+        self.record = dict(backend="gridengine", native_id=job_id)
 
 
 class GridEngineClient:

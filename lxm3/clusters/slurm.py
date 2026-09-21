@@ -32,3 +32,27 @@ class SlurmCluster:
             return f'Client(hostname="{self._hostname}", user="{self._username}")'
         else:
             return "Client()"
+
+    def accounting(self, job_id: str, job_name: str):
+        """Return allocation rows only, excluding recycled IDs with another name."""
+        numeric_id, _, cluster = job_id.partition(";")
+        output = ssh.run(
+            [
+                "sacct",
+                "--noheader",
+                "--parsable2",
+                "--allocations",
+                "--array",
+                f"--jobs={numeric_id}",
+                f"--format=JobID%64,JobName%{len(job_name) + 1},State%32,ExitCode",
+                *([f"--clusters={cluster}"] if cluster else []),
+            ],
+            hostname=self._hostname,
+            username=self._username,
+        ).stdout
+        rows = (line.split("|") for line in output.splitlines() if line.strip())
+        return {
+            native_id.strip(): (state.strip(), code.strip())
+            for native_id, name, state, code in rows
+            if name.strip() == job_name
+        }

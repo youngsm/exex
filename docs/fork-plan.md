@@ -79,6 +79,17 @@ All 366 regressions pass. The disposable-source example completed both locally
 and from S3DF to NERSC (job `58681142`, exit 0, 14 seconds), with identical source
 and staged-archive identities after removing the author-side temporary trees.
 
+The [durable inspection slice](inspection.md) adds author-side SQLite metadata,
+`get_experiment()`, actual-ID `work_units()`, Local/Slurm `get_status()` and bounded
+`get_logs()`. Reopening reads saved references, not launchers; it cannot submit.
+Slurm accounting remains the status authority, without a cached-success fallback.
+This is only reopening/inspection from section 3. Cancellation, keyed submission,
+waits, discovery, metadata editing, source lookup, continuation and CLI additions
+remain deferred. GridEngine launching is unchanged; its inspection adapter is not
+part of this slice.
+All 408 regressions pass. Separate-process inspection retrieved real Local and
+S3DF-to-NERSC status/logs; NERSC job `58682890` completed with exit 0 in 6 seconds.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its

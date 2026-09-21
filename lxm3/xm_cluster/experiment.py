@@ -1,9 +1,7 @@
 import asyncio
 import functools
 import subprocess
-import time
-from concurrent import futures
-from typing import Any, Awaitable, Callable, List, Mapping, Optional, Sequence, Union
+from typing import Any, Awaitable, Mapping, Optional, Sequence, Union
 
 import vcsinfo
 from absl import logging
@@ -11,13 +9,12 @@ from absl import logging
 from lxm3._vendor.xmanager import xm
 from lxm3._vendor.xmanager.xm import async_packager
 from lxm3._vendor.xmanager.xm import core
-from lxm3._vendor.xmanager.xm import id_predictor
-from lxm3._vendor.xmanager.xm import job_blocks
-from lxm3._vendor.xmanager.xm import pattern_matching as pm
 from lxm3.xm_cluster import array_job as array_job_lib
+from lxm3.xm_cluster import catalog
 from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executable_specs
+from lxm3.xm_cluster import inspection
 from lxm3.xm_cluster import metadata
 from lxm3.xm_cluster import packaging
 from lxm3.xm_cluster.execution import gridengine as gridengine_execution
@@ -70,23 +67,18 @@ async def _launch(
 
 
 class ClusterWorkUnit(xm.WorkUnit):
-    """A mock version of WorkUnit with abstract methods implemented."""
+    """A submitted payload with an author-side execution reference."""
 
     def __init__(
         self,
         experiment: "ClusterExperiment",
-        work_unit_id_predictor: id_predictor.Predictor,
-        create_task: Callable[[Awaitable[Any]], futures.Future[Any]],
-        launched_jobs: List[job_blocks.JobType],
-        launched_jobs_args: List[Optional[Mapping[str, Any]]],
-        args: Optional[Mapping[str, Any]],
-        role: xm.ExperimentUnitRole,
+        work_unit_id: int,
+        args: Optional[Mapping[str, Any]] = None,
+        role: xm.ExperimentUnitRole = xm.WorkUnitRole(),
     ) -> None:
-        super().__init__(experiment, create_task, args, role)
-        self._launched_jobs = launched_jobs
-        self._launched_jobs_args = launched_jobs_args
-        self._work_unit_id = work_unit_id_predictor.reserve_id()
-        self._work_unit_id_predictor = work_unit_id_predictor
+        super().__init__(experiment, experiment._create_task, args, role)
+        self._work_unit_id = work_unit_id
+        self._submitted = experiment._reopened
         self._local_handles = []
         self._non_local_handles = []
 
@@ -96,42 +88,79 @@ class ClusterWorkUnit(xm.WorkUnit):
         args_view: Optional[Mapping[str, Any]],
         identity: str,
     ) -> None:
-        """Appends the job group to the launched_jobs list."""
         del identity
-
-        async with self._work_unit_id_predictor.submit_id(self._work_unit_id):  # type: ignore
-            await self._submit_job_for_execution(job_group, args_view)
+        await self._submit_job_for_execution(job_group, args_view)
 
     async def _launch_job_config(self, job_config, args_view, identity):
         del identity
         assert not args_view
-        async with self._work_unit_id_predictor.submit_id(self._work_unit_id):  # type: ignore
-            assert isinstance(job_config, array_job_lib.ArrayJob)
-            await self._submit_job_for_execution(job_config, args_view)
+        assert isinstance(job_config, array_job_lib.ArrayJob)
+        await self._submit_job_for_execution(job_config, args_view)
 
     async def _submit_job_for_execution(
         self, job: Union[xm.JobGroup, array_job_lib.ArrayJob], args
     ):
-        launch_result = await _launch(
-            self.experiment._experiment_title,  # type: ignore
-            self.experiment_unit_name,
-            job,
-            config=self.experiment._config,
-            project=self.experiment._project,
-        )
-        self._ingest_handles(launch_result)
+        if self._submitted:
+            raise ValueError(
+                "A WorkUnit accepts one payload; reopened units are inspection-only"
+            )
+        self._submitted = True
+        try:
+            (payload,) = job_script_builder.flatten_job(job)
+            is_array = isinstance(payload, array_job_lib.ArrayJob)
+            self._save(
+                task_count=len(payload.args) if is_array else 1, is_array=is_array
+            )
+            launch_result = await _launch(
+                self.experiment._experiment_title,
+                self.experiment_unit_name,
+                job,
+                config=self.experiment._config,
+                project=self.experiment._project,
+            )
+            self._ingest_handles(launch_result)
+        except Exception as error:
+            self._save(message=f"Submission error (acceptance may be unknown): {error}")
+            raise
 
     def _ingest_handles(self, launch_result):
-        """"""
         self._local_handles.extend(launch_result.local_handles)
         self._non_local_handles.extend(launch_result.non_local_handles)
+        handles = self._local_handles + self._non_local_handles
+        if handles:
+            self._save(**handles[0].record)
+        for handle in self._local_handles:
+            handle.future.add_done_callback(self._record_local_outcome)
+
+    def _save(self, **fields):
+        self.experiment._catalog.update_work_unit(
+            self.experiment_id, self.work_unit_id, **fields
+        )
+
+    def _record_local_outcome(self, _):
+        if all(handle.future.done() for handle in self._local_handles):
+            status = inspection.local_status(self._local_handles)
+            self._save(state=status.state, message=status.message)
+
+    def get_status(self) -> inspection.WorkUnitStatus:
+        if self._local_handles:
+            return inspection.local_status(self._local_handles)
+        return inspection.get_status(self._record)
+
+    def get_logs(self, *, task: Optional[int] = None, tail: int = 200) -> str:
+        return inspection.get_logs(self._record, task=task, tail=tail)
+
+    @property
+    def _record(self):
+        return self.experiment._catalog.work_unit(self.experiment_id, self.work_unit_id)
 
     async def wait_for_local_jobs(self, is_exit_abrupt: bool):
-        if not is_exit_abrupt:
+        if self._local_handles and not is_exit_abrupt:
             results = await asyncio.gather(
                 *[handle.wait() for handle in self._local_handles],
                 return_exceptions=True,
             )
+            self._record_local_outcome(None)
             for result in results:
                 if isinstance(result, BaseException):
                     raise result
@@ -159,18 +188,27 @@ class ClusterExperiment(xm.Experiment):
         *,
         config: Optional[config_lib.Config] = None,
         project: Optional[str] = None,
+        _experiment_id: Optional[int] = None,
     ) -> None:
         super().__init__()
-        self.launched_jobs = []
-        self.launched_jobs_args = []
-        self._work_units = []
-        self._experiment_id = time.time_ns()
+        self._work_units = {}
         self._experiment_title = experiment_title
         self._vcs = vcs
         self._config = (
             config if config is not None else config_lib.default()
         )._snapshot()
         self._project = project if project is not None else self._config.project()
+        self._catalog = catalog.Catalog(self._config.local_settings().storage_root)
+        self._reopened = _experiment_id is not None
+        if self._reopened:
+            record = self._catalog.experiment(_experiment_id)
+            self._experiment_id = record["id"]
+            self._experiment_title = record["title"]
+            self._project = record["project"]
+        else:
+            self._experiment_id = self._catalog.create_experiment(
+                experiment_title, self._project
+            )
         self._async_packager = async_packager.AsyncPackager(
             functools.partial(
                 packaging.package, config=self._config, project=self._project
@@ -201,39 +239,27 @@ class ClusterExperiment(xm.Experiment):
     ) -> Awaitable[ClusterWorkUnit]:
         """Creates a new WorkUnit instance for the experiment."""
         del identity  # Unused.
+        if self._reopened:
+            raise NotImplementedError("Reopened experiments support inspection only")
+        if not isinstance(role, xm.WorkUnitRole):
+            raise NotImplementedError("Auxiliary units are not supported")
         future = asyncio.Future(loop=self._event_loop)
         experiment_unit = ClusterWorkUnit(
             self,
-            self._work_unit_id_predictor,
-            self._create_task,
-            self.launched_jobs,
-            self.launched_jobs_args,
+            self._catalog.create_work_unit(self.experiment_id),
             args,
             role,
         )
-
-        def _unsupported_aux_units(_):
-            raise NotImplementedError("Auxiliary units are not supported")
-
-        pm.match(
-            pm.Case(
-                [xm.WorkUnitRole],
-                lambda _: self._work_units.append(experiment_unit),
-            ),
-            pm.Case(
-                [xm.AuxiliaryUnitRole],
-                _unsupported_aux_units,
-            ),
-        )(role)
+        self._work_units[experiment_unit.work_unit_id] = experiment_unit
 
         future.set_result(experiment_unit)
         return future
 
     def _wait_for_local_jobs(self, is_exit_abrupt: bool):
         if self._work_units:
-            if any([wu._local_handles for wu in self._work_units]):
+            if any(wu._local_handles for wu in self._work_units.values()):
                 console.info("Waiting for local jobs to complete.")
-        for unit in self._work_units:
+        for unit in self._work_units.values():
             self._create_task(unit.wait_for_local_jobs(is_exit_abrupt))
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -257,7 +283,10 @@ class ClusterExperiment(xm.Experiment):
         return len(self.work_units())
 
     def work_units(self):
-        return {i: wu for i, wu in enumerate(self._work_units)}
+        for unit_id in self._catalog.work_units(self.experiment_id):
+            if unit_id not in self._work_units:
+                self._work_units[unit_id] = ClusterWorkUnit(self, unit_id)
+        return dict(self._work_units)
 
     @property
     def experiment_id(self) -> int:
@@ -303,6 +332,13 @@ def create_experiment(
     if project is None:
         project = config.project() or (vcs.name if vcs is not None else None)
     return ClusterExperiment(experiment_title, vcs=vcs, config=config, project=project)
+
+
+def get_experiment(
+    experiment_id: int, *, config: Optional[config_lib.Config] = None
+) -> ClusterExperiment:
+    """Reopen recorded metadata without submitting, polling or replaying a launcher."""
+    return ClusterExperiment("", config=config, _experiment_id=experiment_id)
 
 
 def get_current_experiment():

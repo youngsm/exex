@@ -1,9 +1,11 @@
 import asyncio
 import atexit
 import concurrent.futures
+import getpass
 import os
 import re
 import shutil
+import socket
 import subprocess
 from typing import Optional
 
@@ -75,8 +77,14 @@ class LocalJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Local]
 
 
 class LocalExecutionHandle:
-    def __init__(self, future: concurrent.futures.Future) -> None:
+    def __init__(self, future: concurrent.futures.Future, log_directory: str) -> None:
         self.future = future
+        self.record = dict(
+            backend="local",
+            hostname=socket.gethostname(),
+            username=getpass.getuser(),
+            log_directory=log_directory,
+        )
 
     async def wait(self) -> None:
         return await asyncio.wrap_future(self.future)
@@ -140,7 +148,7 @@ class LocalClient:
                     )
 
             future = local_executor().submit(task, i)
-            handles.append(LocalExecutionHandle(future))
+            handles.append(LocalExecutionHandle(future, job_log_dir))
 
         return handles
 

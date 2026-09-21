@@ -20,11 +20,14 @@ Executors take one `container_options` keyword accepting `SingularityOptions`,
 For dirty-checkout iteration, [SourceTree and experiment.freeze()](docs/source-capture.md)
 capture raw files without a build or installation and reuse them after the checkout
 changes or disappears. The [source probe](examples/source/launch.py) demonstrates this.
+For later inspection, [get_experiment(), status and logs](docs/inspection.md) reopen
+saved WorkUnits without replaying the launcher. Local final outcomes and native
+Slurm accounting are supported; reopened experiments are inspection-only.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
-are future work, not this slice's release requirements. Durable WorkUnits, source
-lookup/reopen, retained outputs, container image builds/imports, continuation and
-Vertex are not implemented.
+are future work, not this slice's release requirements. Reopened-experiment
+submission/control, source lookup, retained outputs, container image builds/imports,
+continuation and Vertex are not implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers
