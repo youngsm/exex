@@ -24,7 +24,7 @@ result = {
 if args.check_gpu:
     result["gpu_info"] = subprocess.check_output(
         ["nvidia-smi", "--query-gpu=uuid,name", "--format=csv,noheader"],
-        text=True,
+        encoding="utf-8",
     )
 
 args.output_dir.mkdir(parents=True, exist_ok=True)

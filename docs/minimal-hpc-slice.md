@@ -111,13 +111,14 @@ lxm3 launch examples/hpc/launch.py -- \
 
 lxm3 launch examples/hpc/launch.py -- \
   --target=nersc --output_dir=/absolute/nersc/shared/probe-output \
-  --resource=account=m5238_g --resource=qos=shared --resource=constraint=gpu \
-  --resource=nodes=1 --resource=cpus-per-task=32 --resource=gpus-per-task=1 \
+  --resource=account=m5238_g --resource=qos=debug --resource=constraint=gpu \
+  --resource=nodes=1 --resource=cpus-per-task=1 --resource=gpus=1 \
   --python=/usr/bin/python3 --check_gpu
 ```
 
-The NERSC request follows its [documented single-GPU example](https://docs.nersc.gov/systems/perlmutter/running-jobs/#example-scripts).
-Site policy remains explicit launcher configuration, not package logic.
+The NERSC request follows its [documented GPU debug example](https://docs.nersc.gov/jobs/examples/#command-line-submission-of-common-jobs).
+Debug is for short tests, not production training; it reserves a whole node even
+with a one-GPU request. Site policy remains launcher configuration, not package logic.
 
 Local context exit waits for completion and raises on nonzero exit. Combined
 stdout/stderr are saved as `task-0.log` (zero-based for arrays), not streamed to the
@@ -135,16 +136,23 @@ automatic output collection or remote log fetching in this slice.
 - Regression tests cover actual shell execution, literal argument/environment
   round trips, mount rendering, GPU flags, local failures, SSH failure propagation
   without retries, content-derived package names and interrupted uploads.
-  Final run: **239 passed, 2 deselected** in 6.63 seconds on Python 3.12.14, with
+  Final run: **239 passed, 2 deselected** in 10.48 seconds on Python 3.12.14, with
   41 upstream deprecation warnings. Ruff and `git diff --check` pass.
 - Live local execution completed and preserved the probe's literal message.
 - S3DF job `38679691` completed with exit `0:0` on `sdfampere020`, exposing one
   NVIDIA A100-SXM4-40GB under `neutrino:default@ampere`, QoS `preemptable`.
-- S3DF-to-NERSC staging and submission succeeded for job `58660105`. It remained
-  queued on priority and was cancelled; remote workload execution is **not verified**.
-  An earlier request using internal NERSC
-  partition/QoS names was explicitly rejected; the launcher raised without retry.
-  The corrected public request passed `sbatch --test-only` before submission.
+- **S3DF-to-NERSC completed end to end:** job `58660405`, submitted from
+  `sdfiana008`, completed with exit `0:0` on `nid001928` in eight seconds. The
+  staged workload preserved the literal message, reported A100 GPUs, and retained
+  its result and log after temporary-directory cleanup. Debug exposed four GPUs.
+  Result: `debug-output-20260921T0028/result.json` under the NERSC evidence root.
+  Experiment: `1789950517415496656`; native job ID is also saved in staging.
+- Earlier evidence remains: the first internal-policy request was rejected;
+  shared job `58660105` stayed queued and was cancelled. Debug job `58660351`
+  reached a compute node but exposed Python 3.6.15's lack of `subprocess(text=...)`.
+  Replacing that example-only argument with `encoding="utf-8"` fixed the probe;
+  the fix was checked on NERSC's interpreter before the successful rerun. No
+  library/API change or automatic retry was added.
 
 These are archive/launch/output and GPU-driver probes, not CUDA computation,
 container execution, multi-node training, preemption or continuation qualification.
@@ -155,12 +163,13 @@ catalog. A failed upload may leave a temporary file; there is no cleanup service
 Evidence is retained outside the source trees:
 `/sdf/group/neutrino/youngsam/representations/lxm3-qualification.jmeYsG` on S3DF,
 and `/pscratch/sd/y/youngsam/lxm3-qualification-jmeYsG` on NERSC. These contain the
-staged packages/scripts/logs and the completed local/S3DF probe results. The existing
+staged packages/scripts/logs and the completed local/S3DF/NERSC probe results. The existing
 Slurm-account skill guided the association/parent-limit check before the S3DF probe.
 
 ## Per-file diff sizes
 
-This slice only, relative to `c08a336`; counts include tests, examples and docs.
+Initial implementation commit `1f67053`, relative to `c08a336`; counts include
+tests, examples and docs, before the NERSC qualification follow-up.
 The earlier explicit-site routing patch is not counted again.
 
 | File | Added | Deleted |
