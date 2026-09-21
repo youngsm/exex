@@ -110,9 +110,11 @@ def get_status(record):
         state = _SLURM_STATES.get(native_state.split()[0].rstrip("+"), "unknown")
         if state == "completed" and exit_code != "0:0":
             state = "failed" if exit_code else "unknown"
-        statuses.append(
-            WorkUnitStatus(state, f"{native_id}: {native_state} {exit_code}".strip())
-        )
+        message = f"{native_id}: {native_state} {exit_code}".strip()
+        if state == "stopped" and record["state"] in {"stopped", "failed"}:
+            state = record["state"]
+            message = "; ".join(filter(None, (message, record["message"])))
+        statuses.append(WorkUnitStatus(state, message))
     return aggregate(statuses)
 
 

@@ -14,7 +14,9 @@ WorkUnit IDs rather than list offsets, and `get_status()` implements the existin
 XManager interface. `WorkUnitStatus` exposes `state`, `message`, `is_active`,
 `is_completed` and `is_failed`. These are values, not background subscriptions.
 
-This patch deliberately implements **reopening and inspection only**. Reopening
+The original inspection patch implemented **reopening and inspection only**;
+[WorkUnit control](control.md) now also supports Slurm cancellation and Local/Slurm
+completion waiting. Reopening
 does not replay Python, contact a scheduler, allocate IDs or submit work. Missing
 experiment IDs raise `xm.NotFoundError` without creating storage. Adding work to a
 reopened experiment is unsupported in this slice, including through a reopened
@@ -102,7 +104,7 @@ an empty success. `tail=0` returns no lines; negative counts are invalid.
   it into stdout. There is no implicit follow loop or cross-rank merge.
 
 Existing pre-patch jobs are not retroactively imported. GridEngine submissions
-still work, but their inspection adapter is not implemented. Cancellation, waits,
+still work, but their inspection adapter is not implemented. Local cancellation,
 keyed submission, discovery/listing, adding to reopened experiments, persistent
 annotations, source lookup, outputs, continuation and new CLI commands remain
 separate work. This does not complete section 3 of the broader fork plan.

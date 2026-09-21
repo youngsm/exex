@@ -27,6 +27,21 @@ class SlurmCluster:
         parse_job_id(output)
         return output
 
+    def cancel(self, job_id: str, job_name: str) -> None:
+        """Cancel only the recorded ID/name pair, including all array elements."""
+        numeric_id, _, cluster = job_id.partition(";")
+        ssh.run(
+            [
+                "scancel",
+                "--ctld",
+                f"--name={job_name}",
+                *([f"--clusters={cluster}"] if cluster else []),
+                numeric_id,
+            ],
+            hostname=self._hostname,
+            username=self._username,
+        )
+
     def __repr__(self):
         if self._hostname is not None:
             return f'Client(hostname="{self._hostname}", user="{self._username}")'

@@ -106,13 +106,19 @@ print(json.dumps(experiment.experiment_id))
     )
     experiment_id = json.loads(result.stdout.splitlines()[-1])
     read = """
-import json, sys
-from lxm3 import xm_cluster as xc
+import asyncio, json, sys
+from lxm3 import xm, xm_cluster as xc
 config = xc.Config({'local': {'storage': {'staging': sys.argv[1]}}})
 experiment = xc.get_experiment(int(sys.argv[2]), config=config)
 unit = experiment.work_units()[1]
 with experiment:
     pass  # Merely entering a reopened context must not overwrite saved outcomes.
+async def wait():
+    try:
+        assert await unit.wait_until_complete() is unit
+    except xm.ExperimentUnitFailedError as error:
+        assert error.work_unit is unit and unit.get_status().is_failed
+asyncio.run(wait())
 print(json.dumps({'id': experiment.experiment_id, 'units': list(experiment.work_units()), 'state': unit.get_status().state, 'logs': unit.get_logs(tail=100)}))
 """
     result = subprocess.run(
@@ -164,7 +170,7 @@ def test_reopen_is_read_only_and_does_not_replay_or_poll(config, tmp_path):
         assert list(reopened.work_units()) == [1]
         assert reopened.work_units()[1].work_unit_id == 1
         assert reopened._project == "test"
-        with pytest.raises(NotImplementedError, match="inspection only"):
+        with pytest.raises(NotImplementedError, match="cannot submit"):
             reopened.add(None)
     assert database.read_bytes() == before
 
@@ -385,6 +391,7 @@ def test_async_context_remains_awaitable_and_inspectable(config, tmp_path):
             [executable] = experiment.package([xm.Packageable(source, xc.Local.Spec())])
             unit = await experiment.add(xm.Job(executable, xc.Local()))
             assert experiment.work_units()[unit.work_unit_id] is unit
+            assert await unit.wait_until_complete() is unit
         return experiment
 
     experiment = asyncio.run(launch())

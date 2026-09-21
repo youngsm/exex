@@ -9,6 +9,7 @@ from absl import logging
 from lxm3._vendor.xmanager import xm
 from lxm3._vendor.xmanager.xm import async_packager
 from lxm3._vendor.xmanager.xm import core
+from lxm3.clusters import slurm
 from lxm3.xm_cluster import array_job as array_job_lib
 from lxm3.xm_cluster import catalog
 from lxm3.xm_cluster import config as config_lib
@@ -23,6 +24,8 @@ from lxm3.xm_cluster.execution import local as local_execution
 from lxm3.xm_cluster.execution import slurm as slurm_execution
 from lxm3.xm_cluster.packaging import source as source_capture
 from lxm3.xm_cluster.packaging.router import _package_target
+
+_STATUS_POLL_INTERVAL = 10
 
 
 class _LaunchResult:
@@ -102,7 +105,7 @@ class ClusterWorkUnit(xm.WorkUnit):
     ):
         if self._submitted:
             raise ValueError(
-                "A WorkUnit accepts one payload; reopened units are inspection-only"
+                "A WorkUnit accepts one payload; reopened units cannot submit"
             )
         self._submitted = True
         try:
@@ -149,6 +152,52 @@ class ClusterWorkUnit(xm.WorkUnit):
 
     def get_logs(self, *, task: Optional[int] = None, tail: int = 200) -> str:
         return inspection.get_logs(self._record, task=task, tail=tail)
+
+    def stop(
+        self,
+        *,
+        mark_as_failed: bool = False,
+        mark_as_completed: bool = False,
+        message: Optional[str] = None,
+    ) -> None:
+        """Request native Slurm cancellation, without waiting for termination."""
+        if mark_as_completed:
+            raise NotImplementedError("Cancellation cannot mark a WorkUnit completed")
+        record = self._record
+        if record["backend"] is None:
+            # XM calls stop after submission errors. No accepted handle is owned.
+            return
+        if record["backend"] != "slurm":
+            raise NotImplementedError("Cancellation is supported only for Slurm")
+        # For Slurm these fields record intent, never evidence of termination.
+        self._save(
+            state="failed" if mark_as_failed else "stopped", message=message or ""
+        )
+        slurm.SlurmCluster(inspection._hostname(record), record["username"]).cancel(
+            record["native_id"], record["job_name"]
+        )
+
+    async def _wait_until_complete(self) -> None:
+        if self._local_handles:
+            # Cancelling a waiter must not cancel queued/running Local futures.
+            await asyncio.gather(
+                *(
+                    asyncio.shield(asyncio.wrap_future(handle.future))
+                    for handle in self._local_handles
+                ),
+                return_exceptions=True,
+            )
+        while True:
+            status = await asyncio.to_thread(self.get_status)
+            if status.is_completed:
+                return
+            if status.is_failed:
+                raise xm.ExperimentUnitFailedError(status.message, work_unit=self)
+            if status.state in {"stopped", "paused"}:
+                raise xm.ExperimentUnitNotCompletedError(
+                    status.message or status.state, work_unit=self
+                )
+            await asyncio.sleep(_STATUS_POLL_INTERVAL)
 
     @property
     def _record(self):
@@ -240,7 +289,7 @@ class ClusterExperiment(xm.Experiment):
         """Creates a new WorkUnit instance for the experiment."""
         del identity  # Unused.
         if self._reopened:
-            raise NotImplementedError("Reopened experiments support inspection only")
+            raise NotImplementedError("Reopened experiments cannot submit work")
         if not isinstance(role, xm.WorkUnitRole):
             raise NotImplementedError("Auxiliary units are not supported")
         future = asyncio.Future(loop=self._event_loop)

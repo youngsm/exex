@@ -83,12 +83,19 @@ The [durable inspection slice](inspection.md) adds author-side SQLite metadata,
 `get_experiment()`, actual-ID `work_units()`, Local/Slurm `get_status()` and bounded
 `get_logs()`. Reopening reads saved references, not launchers; it cannot submit.
 Slurm accounting remains the status authority, without a cached-success fallback.
-This is only reopening/inspection from section 3. Cancellation, keyed submission,
-waits, discovery, metadata editing, source lookup, continuation and CLI additions
-remain deferred. GridEngine launching is unchanged; its inspection adapter is not
-part of this slice.
-All 408 regressions pass. Separate-process inspection retrieved real Local and
-S3DF-to-NERSC status/logs; NERSC job `58682890` completed with exit 0 in 6 seconds.
+This implements reopening/inspection from section 3. The subsequent
+[control slice](control.md) implements the inherited `stop()` for Slurm and
+`wait_until_complete()` for Slurm/Local, including after reopening. Local
+cancellation, keyed submission, discovery, metadata editing, source lookup,
+continuation and CLI additions remain deferred. GridEngine launching is unchanged;
+its inspection/control adapter is not part of these slices.
+The inspection slice passed 408 regressions. Separate-process inspection retrieved
+real Local and S3DF-to-NERSC status/logs; NERSC job `58682890` completed with exit 0
+in 6 seconds. With control implemented, all 438 regressions pass. NERSC job
+`58701332` survived a timed-out wait and a mismatched-name cancellation, then was
+cancelled through a reopened WorkUnit after 20 seconds of execution. The batch
+step terminated with signal 15 and no allocation remains active. A fresh Local
+array and the earlier successful NERSC job also passed standalone completion waits.
 
 ## Decision and scope
 
