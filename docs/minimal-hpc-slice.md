@@ -5,12 +5,12 @@ not its eventual feature list. No catalog, artifact API, continuation or new bac
 
 ## Exact public API
 
-No public constructor or method is added. Retain:
+Keep the existing constructors and methods, with optional work-directory placement:
 
 ```python
 xc.create_experiment(title, project=None, *, config=None)
-xc.Local()
-xc.Slurm(cluster=None, resources={}, walltime=None, ...)
+xc.Local(*, workdir_root=None, ...)
+xc.Slurm(cluster=None, resources={}, walltime=None, workdir_root=None, ...)
 executor.Spec()
 xm.Packageable(package_spec, executor_spec=executor.Spec())
 experiment.package(packageables)
@@ -43,8 +43,9 @@ No remote Python installation or resident service is required by this adapter.
 GridEngine keeps its existing transport. No connection retry or lost-job discovery.
 The private store factory gains `use_openssh=False`; only the Slurm caller enables it.
 
-The example launcher accepts exactly `--target`, `--output_dir`, repeatable
-`--resource=key=value`, `--python` and `--check_gpu`. These are example flags, not
+The example launcher accepts `--target`, `--output_dir`, repeatable
+`--resource=key=value`, `--python`, `--check_gpu` and optional `--workdir_root`.
+These are example flags, not
 package API additions. Its 120-second Slurm request is a launch/driver probe, not
 a training or distributed-compute qualification.
 
@@ -131,12 +132,62 @@ directory because the probe deliberately refuses to overwrite its result. Files
 left only in the temporary working directory are deleted at job exit. There is no
 automatic output collection or remote log fetching in this slice.
 
+## Working directories
+
+`Local` and `Slurm` accept the keyword-only `workdir_root: str | None = None`:
+
+```python
+from lxm3 import xm_cluster as xc
+
+local = xc.Local(workdir_root="/tmp")
+nersc = xc.Slurm(
+    cluster="nersc",
+    workdir_root="/pscratch/sd/y/youngsam/experiments/wsd",
+    resources={"nodes": 2, "ntasks-per-node": 1},
+)
+```
+
+The parent is created if missing. Each execution, including each array task,
+gets a unique child directory for unpacking. Cleanup removes only that child,
+on success or ordinary failure, never the supplied parent or its other contents.
+Abrupt termination can leave a child behind; there is no cleanup service.
+Omitting the option preserves the system temporary-directory behavior. This
+option does not change the application's `TMPDIR`, output paths, or container
+working-directory mapping. GridEngine is unchanged.
+
+Paths are interpreted on the execution host; use an absolute path to avoid
+depending on its initial working directory. Select a shared parent when remote
+workers need the unpacked files. Extraction and the batch entrypoint still run
+once: requesting multiple nodes does not launch workers automatically. A driver
+must wait for its workers before returning, since its work directory is temporary.
+
+From the fork checkout, the existing non-ML probe exposes the same option:
+
+```sh
+lxm3 launch examples/hpc/launch.py -- \
+  --target=local --output_dir=/tmp/lxm3-output-001 \
+  --workdir_root=/tmp/lxm3-experiment-001
+```
+
+The retained `result.json` records the actual working directory. The output
+directory survives; the unpacked child is removed. This is a directory-placement
+option, not a new allocation, process-launch, or retained-artifact API.
+
+Qualification: **261 tests passed, 2 integration tests deselected**. Generated
+Local and Slurm scripts were executed locally to check placement, default behavior,
+literal paths, array isolation, setup errors, and success/failure cleanup. Container
+command tests cover custom roots without requiring image pulls or a container engine.
+The real local probe also passed: experiment `1789959010768490312`, with evidence
+under `/lscratch/youngsam/tmp/lxm3-workdir.rSWPkQ`. It unpacked beneath the selected
+experiment folder, then removed its child while preserving the parent, a pre-existing
+file, and `output/result.json`. No new scheduler jobs were submitted for this option.
+
 ## Qualification and remaining limits
 
 - Regression tests cover actual shell execution, literal argument/environment
   round trips, mount rendering, GPU flags, local failures, SSH failure propagation
   without retries, content-derived package names and interrupted uploads.
-  Final run: **239 passed, 2 deselected** in 10.48 seconds on Python 3.12.14, with
+  Initial run: **239 passed, 2 deselected** in 10.48 seconds on Python 3.12.14, with
   41 upstream deprecation warnings. Ruff and `git diff --check` pass.
 - Live local execution completed and preserved the probe's literal message.
 - S3DF job `38679691` completed with exit `0:0` on `sdfampere020`, exposing one

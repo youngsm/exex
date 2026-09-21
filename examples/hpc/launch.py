@@ -26,6 +26,9 @@ PYTHON = flags.DEFINE_string(
 GPU = flags.DEFINE_bool(
     "check_gpu", False, "Require nvidia-smi to succeed inside the job"
 )
+WORKDIR = flags.DEFINE_string(
+    "workdir_root", None, "Execution-host parent for temporary unpacked source"
+)
 
 
 def main(_):
@@ -34,12 +37,13 @@ def main(_):
             "output_dir must be absolute: the job's temporary directory is deleted on exit"
         )
     executor = (
-        xc.Local()
+        xc.Local(workdir_root=WORKDIR.value)
         if TARGET.value == "local"
         else xc.Slurm(
             cluster=TARGET.value,
             walltime=120,
             resources=dict(item.split("=", 1) for item in RESOURCE.value),
+            workdir_root=WORKDIR.value,
         )
     )
     package_spec = xc.UniversalPackage(

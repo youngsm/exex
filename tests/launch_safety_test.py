@@ -86,8 +86,97 @@ def test_literal_arguments_and_environment(tmp_path, executor, builder, array):
     assert not marker.exists()
 
 
+@pytest.mark.parametrize(
+    "executor_type,builder",
+    [
+        (xc.Local, local.LocalJobScriptBuilder()),
+        (xc.Slurm, slurm.SlurmJobScriptBuilder()),
+    ],
+)
+@pytest.mark.parametrize("custom_root", [False, True])
+@pytest.mark.parametrize("array", [False, True])
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_workdir_placement_and_cleanup(
+    tmp_path, executor_type, builder, custom_root, array, exit_code
+):
+    system_tmp = tmp_path / "system tmp"
+    system_tmp.mkdir()
+    root = tmp_path / "experiment ' $(touch unexpected)" if custom_root else system_tmp
+    root.mkdir(exist_ok=True)
+    sentinel = root / "keep.txt"
+    sentinel.write_text("existing experiment data")
+    executor = executor_type(workdir_root=str(root) if custom_root else None)
+    executable = bundle(
+        tmp_path,
+        '#!/bin/sh\nprintf \'%s\\n\' "$PWD" "$TMPDIR" > "$1"\nexit "$2"\n',
+    )
+    outputs = [tmp_path / f"result-{i}" for i in range(2 if array else 1)]
+    args = [[str(output), str(exit_code)] for output in outputs]
+    job = (
+        xc.ArrayJob(executable, executor, args=args)
+        if array
+        else xm.Job(executable, executor, args=args[0])
+    )
+    script = tmp_path / "job.sh"
+    script.write_text(builder.build(job, "workdir", str(tmp_path / "logs")))
+    workdirs = []
+    for index, output in enumerate(outputs, builder.ARRAY_TASK_OFFSET):
+        result = subprocess.run(
+            ["bash", str(script)],
+            cwd=tmp_path,
+            env={
+                **os.environ,
+                "TMPDIR": str(system_tmp),
+                builder.ARRAY_TASK_ID: str(index),
+            },
+            capture_output=True,
+        )
+        assert result.returncode == exit_code, result.stderr.decode()
+        workdir, application_tmp = output.read_text().splitlines()
+        workdir = Path(workdir)
+        assert workdir.parent == root
+        assert application_tmp == str(system_tmp)
+        assert not workdir.exists()
+        workdirs.append(workdir)
+    assert len(set(workdirs)) == len(outputs)
+    assert list(root.iterdir()) == [sentinel]
+    assert sentinel.read_text() == "existing experiment data"
+    assert not (tmp_path / "unexpected").exists()
+
+
+@pytest.mark.parametrize(
+    "executor_type,builder",
+    [
+        (xc.Local, local.LocalJobScriptBuilder()),
+        (xc.Slurm, slurm.SlurmJobScriptBuilder()),
+    ],
+)
+@pytest.mark.parametrize("blocked", [False, True])
+def test_workdir_parent_setup(tmp_path, executor_type, builder, blocked):
+    parent = tmp_path / "new parent"
+    if blocked:
+        parent.write_text("not a directory")
+    executable = bundle(tmp_path, "#!/bin/sh\necho executed\n")
+    executor = executor_type(workdir_root="new parent/nested")
+    script = builder.build(xm.Job(executable, executor), "workdir", str(tmp_path))
+    result = subprocess.run(
+        ["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True
+    )
+    if blocked:
+        assert result.returncode != 0
+        assert "executed" not in result.stdout
+        assert parent.read_text() == "not a directory"
+    else:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "executed"
+        assert list((parent / "nested").iterdir()) == []
+
+
 @pytest.mark.parametrize("runtime", ["singularity", "docker"])
-def test_container_mounts_and_image_are_literal(tmp_path, monkeypatch, runtime):
+@pytest.mark.parametrize("custom_root", [False, True])
+def test_container_mounts_and_image_are_literal(
+    tmp_path, monkeypatch, runtime, custom_root
+):
     capture = tmp_path / "container-argv.json"
     fake = tmp_path / runtime
     fake.write_text(
@@ -107,6 +196,7 @@ def test_container_mounts_and_image_are_literal(tmp_path, monkeypatch, runtime):
     executor = xc.Local(
         singularity_options=xc.SingularityOptions(bind={source: destination}),
         docker_options=xc.DockerOptions(volumes={source: destination}),
+        workdir_root=str(tmp_path / "work ' $literal") if custom_root else None,
     )
     script = tmp_path / "job.sh"
     script.write_text(

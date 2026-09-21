@@ -16,6 +16,7 @@ args = parser.parse_args()
 
 result = {
     "host": socket.gethostname(),
+    "workdir": os.getcwd(),
     "python": sys.version,
     "message": args.message,
     "slurm_job_id": os.environ.get("SLURM_JOB_ID"),

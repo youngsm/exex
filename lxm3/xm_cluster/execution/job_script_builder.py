@@ -183,9 +183,18 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         install_dir = "$LXM_WORKDIR"
         install_cmds = self._create_install_commands(job, install_dir)
         entrypoint_cmds = self._create_entrypoint_commands(job, install_dir)
+        workdir_cmds = 'LXM_WORKDIR="$(mktemp -d)"'
+        workdir_root = getattr(executor, "workdir_root", None)
+        if workdir_root is not None:
+            root = shlex.quote(workdir_root)
+            workdir_cmds = (
+                f"mkdir -p -- {root}\n"
+                f'LXM_WORKDIR="$(cd -- {root} && mktemp -d "$PWD/lxm3.XXXXXXXXXX")"'
+            )
         return _JOB_SCRIPT_TEMPLATE % {
             "shebang": self.JOB_SCRIPT_SHEBANG,
             "header": header,
+            "workdir": workdir_cmds,
             "install": install_cmds,
             "prologue": prologue,
             "entrypoint": entrypoint_cmds,
@@ -197,7 +206,7 @@ _JOB_SCRIPT_TEMPLATE = """\
 %(header)s
 set -e
 
-LXM_WORKDIR="$(mktemp -d)"
+%(workdir)s
 cleanup() {
   echo >& 2 "DEBUG[$(basename "$0")] Cleaning up $LXM_WORKDIR"
   rm -rf "$LXM_WORKDIR"

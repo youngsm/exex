@@ -74,12 +74,16 @@ class Local(xm.Executor, SupportsContainer):
     Args:
         requirements: placeholder, no effect right now
         singularity_options: Options for singularity container
+        workdir_root: Execution-host parent for a temporary unpacked directory.
+            None uses the system temporary directory. Only the child is cleaned up.
     """
 
     requirements: JobRequirements = attr.Factory(JobRequirements)
 
     singularity_options: Optional[SingularityOptions] = None
     docker_options: Optional[DockerOptions] = None
+
+    workdir_root: Optional[str] = attr.field(default=None, kw_only=True)
 
     @classmethod
     def Spec(cls) -> LocalSpec:
@@ -176,7 +180,12 @@ class SlurmSpec(xm.ExecutorSpec):
 
 @attr.s(auto_attribs=True)
 class Slurm(xm.Executor, SupportsContainer):
-    """Slurm executor."""
+    """Slurm executor.
+
+    workdir_root selects the execution-host parent for a temporary unpacked
+    directory. None uses the system temporary directory. Only the child is
+    cleaned up; use a shared parent when workers on other nodes need the files.
+    """
 
     requirements: JobRequirements = attr.Factory(JobRequirements)
     resources: Dict[str, Any] = attr.Factory(dict)
@@ -198,6 +207,7 @@ class Slurm(xm.Executor, SupportsContainer):
     skip_directives: Sequence[str] = attr.Factory(list)
 
     cluster: Optional[str] = attr.field(default=None, kw_only=True)
+    workdir_root: Optional[str] = attr.field(default=None, kw_only=True)
 
     def Spec(self) -> SlurmSpec:
         return SlurmSpec(cluster=self.cluster)
