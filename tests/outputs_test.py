@@ -19,8 +19,8 @@ from lxm3.xm_cluster import experiment as experiment_lib
 from lxm3.xm_cluster import outputs
 from lxm3.xm_cluster.execution import gridengine
 from lxm3.xm_cluster.execution import slurm
-from lxm3.xm_cluster.execution.output_capture import capture
-from lxm3.xm_cluster.execution.output_capture import digest_file
+from lxm3.xm_cluster.execution.artifact_io import capture
+from lxm3.xm_cluster.execution.artifact_io import digest_file
 
 
 @pytest.fixture(autouse=True)

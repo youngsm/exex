@@ -87,7 +87,8 @@ sees its container path; NERSC Shifter sees its shared site path. No extra outpu
 bind is needed. Multi-process applications must coordinate their writes themselves;
 this API creates one result set per job/array task, not per distributed rank.
 
-This slice does not add inputs, publication, retries, continuation, per-attempt
+For another job to consume retained results, see [input bindings](inputs.md).
+This API does not add publication, retries, continuation, per-attempt
 history, a CLI fetch command, automatic uploads, or ML-framework dependencies.
 Re-executing a successful native job against the same result location fails capture
 instead of replacing its retained content; requeue/continuation is separate work.

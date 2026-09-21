@@ -35,10 +35,13 @@ metadata-only discovery in Python; no scheduler connection is needed to list run
 [WorkUnit history](docs/inspection.md#concrete-job-history) exposes `unit.job`,
 `unit.source` and `unit.get_script()`: the concrete request and its saved script,
 without replaying a launcher. History does not imply hermetic reproducibility.
+For producer-to-consumer workflows, [input bindings](docs/inputs.md) make retained
+artifacts available beneath `LXM_INPUT_DIR` through `add(..., inputs=...)`.
+Each task receives verified private copies on the same execution endpoint.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Keyed submission, prepared
-executable lookup, Local cancellation, artifact inputs/publication, container image builds/imports,
+executable lookup, Local cancellation, artifact publication, container image builds/imports,
 continuation and Vertex are not implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.

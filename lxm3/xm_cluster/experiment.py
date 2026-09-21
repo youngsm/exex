@@ -16,6 +16,7 @@ from lxm3.xm_cluster import catalog
 from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executable_specs
+from lxm3.xm_cluster import inputs as input_lib
 from lxm3.xm_cluster import inspection
 from lxm3.xm_cluster import job_snapshot
 from lxm3.xm_cluster import metadata
@@ -45,6 +46,7 @@ async def _launch(
     config: config_lib.Config,
     project: Optional[str],
     outputs=None,
+    inputs=None,
 ):
     local_handles = []
     non_local_handles = []
@@ -52,6 +54,7 @@ async def _launch(
     job_name = f"{experiment_title}_{work_unit_name}"
 
     for payload in job_script_builder.flatten_job(job):
+        input_lib.check_site(inputs, payload.executor, config)
         target = payload.executable._target
         if target is not None and target != _package_target(
             payload.executor.Spec(), config=config, project=project
@@ -62,17 +65,32 @@ async def _launch(
 
     local_handles.extend(
         await local_execution.launch(
-            job_name, job, config=config, project=project, outputs=outputs
+            job_name,
+            job,
+            config=config,
+            project=project,
+            outputs=outputs,
+            inputs=inputs,
         )
     )
     non_local_handles.extend(
         await slurm_execution.launch(
-            job_name, job, config=config, project=project, outputs=outputs
+            job_name,
+            job,
+            config=config,
+            project=project,
+            outputs=outputs,
+            inputs=inputs,
         )
     )
     non_local_handles.extend(
         await gridengine_execution.launch(
-            job_name, job, config=config, project=project, outputs=outputs
+            job_name,
+            job,
+            config=config,
+            project=project,
+            outputs=outputs,
+            inputs=inputs,
         )
     )
 
@@ -133,6 +151,7 @@ class ClusterWorkUnit(xm.WorkUnit):
                 config=self.experiment._config,
                 project=self.experiment._project,
                 outputs=json.loads(self._record.get("outputs") or "{}"),
+                inputs=json.loads(self._record.get("inputs") or "{}"),
             )
             self._ingest_handles(launch_result)
         except Exception as error:
@@ -322,18 +341,20 @@ class ClusterExperiment(xm.Experiment):
         role=xm.WorkUnitRole(),
         identity="",
         outputs: Optional[Mapping[str, str]] = None,
+        inputs: Optional[Mapping[str, output_lib.Artifact]] = None,
     ):
-        """Add one payload, optionally retaining named paths beneath LXM_OUTPUT_DIR."""
+        """Add one payload with optional retained outputs and same-site input artifacts."""
         declared = output_lib.declarations(outputs)
-        if not declared:
+        bindings = input_lib.declarations(inputs)
+        if not declared and not bindings:
             return super().add(job, args, role=role, identity=identity)
 
-        async def with_outputs(unit, **overrides):
-            unit._save(outputs=json.dumps(declared))
+        async def with_artifacts(unit, **overrides):
+            unit._save(outputs=json.dumps(declared), inputs=json.dumps(bindings))
             await unit.add(job, overrides or None)
 
         role = job.role if isinstance(job, xm.AuxiliaryUnitJob) else role
-        return super().add(with_outputs, args, role=role, identity=identity)
+        return super().add(with_artifacts, args, role=role, identity=identity)
 
     def freeze(
         self, source: executable_specs.SourceTree

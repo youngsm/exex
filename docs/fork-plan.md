@@ -1,6 +1,6 @@
 # LXM3 fork: implementation delta
 
-Status: retained-output slice, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
+Status: same-site input slice, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
 Upstream: [ethanluoyc/lxm3](https://github.com/ethanluoyc/lxm3), commit
 `30f55855e595ee7d8397daacb1475442265f37ef`. The
 [API proposal](fork-api-proposal.md) defines the broader method-level changes.
@@ -167,6 +167,20 @@ and directory retrieval passed locally and on S3DF/Singularity (`38745384`) and
 S3DF-to-NERSC/Shifter (`58710267`). Missing-output probes (`38745552`, `58710289`)
 failed as expected and exposed no partial results. All jobs are terminal and
 temporary working directories were cleaned; see the linked qualification record.
+
+The [same-site input slice](inputs.md) adds one public keyword,
+`add(..., inputs={name: artifact})`, and `LXM_INPUT_DIR`. It records named immutable
+archive references in a nullable WorkUnit column, rejects different host/user
+endpoints before submission, and verifies/extracts private task copies before
+starting the payload. It extends the existing embedded capture helper rather than
+adding a worker dependency or transfer service. Arrays, generators and existing
+invocation overrides are preserved. No cross-site transfer, dependency scheduling,
+continuation, publication, new history accessor or pimm changes are included.
+All 559 regressions pass, with 2 upstream integration tests deselected. Consumers
+reopened previous producers and completed locally, on S3DF/Singularity (`38747526`)
+and S3DF-to-NERSC/Shifter (`58711717`). Fresh-process result retrieval, producer
+archive integrity after private-copy mutation and working-directory cleanup all
+passed. Both Slurm jobs are terminal; the linked evidence record retains their IDs.
 
 ## Decision and scope
 

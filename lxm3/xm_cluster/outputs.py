@@ -15,7 +15,7 @@ import fsspec
 
 from lxm3.clusters import ssh
 from lxm3.xm_cluster import inspection
-from lxm3.xm_cluster.execution.output_capture import digest_file
+from lxm3.xm_cluster.execution.artifact_io import digest_file
 
 
 def declarations(outputs):

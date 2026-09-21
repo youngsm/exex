@@ -100,6 +100,7 @@ def test_first_submission_upgrades_and_preserves_existing_records(
         "script_path": None,
         "outputs": None,
         "artifact_directory": None,
+        "inputs": None,
     }
     assert store.experiment(101) == original_experiment
     assert store.sources(101).items() >= original_sources.items()

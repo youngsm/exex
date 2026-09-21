@@ -1,4 +1,4 @@
-"""Post-success output capture. Embedded in job scripts; standard library only."""
+"""Input preparation and output capture; embedded, standard-library-only helpers."""
 
 import hashlib
 import json
@@ -7,6 +7,7 @@ import sys
 import tarfile
 import tempfile
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
 def digest_file(path):
@@ -15,6 +16,31 @@ def digest_file(path):
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def prepare(root, inputs):
+    root = Path(root)
+    for name, binding in inputs.items():
+        archive_path = binding["archive_path"]
+        if digest_file(archive_path) != binding["id"]:
+            raise ValueError(
+                "Input archive does not match its content identity: " + name
+            )
+        with tempfile.TemporaryDirectory(prefix=".input-", dir=root) as temporary:
+            with tarfile.open(archive_path) as archive:
+                members = archive.getmembers()
+                # Older HPC host Pythons lack extraction filters. Accept only our
+                # file/directory format beneath data/, into a fresh private tree.
+                for member in members:
+                    path = PurePosixPath(member.name)
+                    if (
+                        path.parts[:1] != ("data",)
+                        or ".." in path.parts
+                        or not (member.isfile() or member.isdir())
+                    ):
+                        raise ValueError("Invalid input archive member: " + member.name)
+                archive.extractall(temporary, members=members)
+            (Path(temporary) / "data").rename(root / name)
 
 
 def _member(info):
@@ -53,4 +79,7 @@ def capture(root, destination, outputs):
 
 
 if __name__ == "__main__":
-    capture(sys.argv[1], sys.argv[2], json.loads(sys.argv[3]))
+    if sys.argv[1] == "prepare":
+        prepare(sys.argv[2], json.loads(sys.argv[3]))
+    else:
+        capture(sys.argv[2], sys.argv[3], json.loads(sys.argv[4]))

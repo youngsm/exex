@@ -18,7 +18,7 @@ from lxm3.xm_cluster import artifacts
 from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import executables
 from lxm3.xm_cluster import executors
-from lxm3.xm_cluster.execution import output_capture
+from lxm3.xm_cluster.execution import artifact_io
 
 JobType = Union[xm.Job, array_job.ArrayJob]
 ExecutorType = TypeVar("ExecutorType", bound=executors.SupportsContainer)
@@ -191,6 +191,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         job_log_dir: str,
         *,
         outputs=None,
+        inputs=None,
     ) -> str:
         executable = job.executable
         if not isinstance(executable, executables.AppBundle):
@@ -227,11 +228,14 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         install_dir = "$LXM_WORKDIR"
         install_cmds = self._create_install_commands(job, install_dir)
         entrypoint_cmds = self._create_entrypoint_commands(job, install_dir)
+        for kind, bindings in (("INPUT", inputs), ("OUTPUT", outputs)):
+            if bindings:
+                variable = f"LXM_{kind}_DIR"
+                install_cmds += f'\n{variable}="$(mktemp -d "$LXM_WORKDIR/lxm-{kind.lower()}.XXXXXXXXXX")"\n'
+                install_cmds += f'''printf '\\nexport {variable}="$PWD/%s"\\n' "${{{variable}##*/}}" >> "$LXM_WORKDIR/job-param.sh"'''
+        if inputs:
+            install_cmds += _artifact_command("prepare", '"$LXM_INPUT_DIR"', inputs)
         if outputs:
-            install_cmds += (
-                '\nLXM_OUTPUT_DIR="$(mktemp -d "$LXM_WORKDIR/lxm-output.XXXXXXXXXX")"\n'
-            )
-            install_cmds += '''printf '\\nexport LXM_OUTPUT_DIR="$PWD/%s"\\n' "${LXM_OUTPUT_DIR##*/}" >> "$LXM_WORKDIR/job-param.sh"'''
             task = (
                 f"$(({self.ARRAY_TASK_ID} - {self.ARRAY_TASK_OFFSET}))"
                 if num_array_tasks is not None
@@ -240,11 +244,8 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
             destination = (
                 shlex.quote(os.path.join(job_log_dir, "artifacts")) + f'/"{task}"'
             )
-            helper = Path(output_capture.__file__).read_text()
-            entrypoint_cmds += (
-                f"\npython3 - \"$LXM_OUTPUT_DIR\" {destination} {shlex.quote(json.dumps(outputs))} <<'LXM_CAPTURE_PY'\n"
-                + helper
-                + "\nLXM_CAPTURE_PY"
+            entrypoint_cmds += _artifact_command(
+                "capture", f'"$LXM_OUTPUT_DIR" {destination}', outputs
             )
         workdir_cmds = 'LXM_WORKDIR="$(mktemp -d)"'
         workdir_root = getattr(executor, "workdir_root", None)
@@ -262,6 +263,15 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
             "prologue": prologue,
             "entrypoint": entrypoint_cmds,
         }
+
+
+def _artifact_command(operation, paths, bindings):
+    helper = Path(artifact_io.__file__).read_text()
+    return (
+        f"\npython3 - {operation} {paths} {shlex.quote(json.dumps(bindings))} <<'LXM_ARTIFACT_PY'\n"
+        + helper
+        + "\nLXM_ARTIFACT_PY\n"
+    )
 
 
 _JOB_SCRIPT_TEMPLATE = """\

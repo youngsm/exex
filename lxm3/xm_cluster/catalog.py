@@ -42,6 +42,7 @@ class Catalog:
                     backend TEXT, hostname TEXT, username TEXT,
                     native_id TEXT, job_name TEXT, log_directory TEXT,
                     job TEXT, script_path TEXT, outputs TEXT, artifact_directory TEXT,
+                    inputs TEXT,
                     task_count INTEGER DEFAULT 1, is_array INTEGER DEFAULT 0,
                     state TEXT DEFAULT 'unknown', message TEXT DEFAULT '',
                     PRIMARY KEY (experiment_id, id)
@@ -90,7 +91,8 @@ class Catalog:
                 row["name"] for row in db.execute("PRAGMA table_info(work_units)")
             }
             for name in sorted(
-                {"job", "script_path", "outputs", "artifact_directory"} - columns
+                {"job", "script_path", "outputs", "artifact_directory", "inputs"}
+                - columns
             ):
                 db.execute(f"ALTER TABLE work_units ADD COLUMN {name} TEXT")
             unit_id = db.execute(
