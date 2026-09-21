@@ -125,9 +125,14 @@ argument (including quotes, dollar sign and newline). Its source directory was
 removed before packaging; the extracted execution directory was cleaned after
 completion. No real checkout was deleted or changed.
 
-The same example was submitted from S3DF to NERSC as job `58681142`, experiment
-`1789974034772354506`, with a two-minute limit. At submission it was pending
-priority; acceptance and verified staging alone are not execution success.
+Using implementation commit `19aa704`, the same example completed from S3DF to
+NERSC as job `58681142`, experiment `1789974034772354506`, on `nid001549`:
+`COMPLETED`, exit `0:0`, 14 seconds elapsed with a two-minute limit. The application
+result preserved the same literal argument. This was a CPU-only standard-library
+workload, not a GPU calculation or training test.
+Direct filesystem checks also confirmed removal of the unique extracted directory
+`source-work/lxm3.YWhqaTTldf`, while the shared parent and result remained. The
+allocation is terminal; there are no remaining jobs from this slice.
 Both independently captured trees produced source ID
 `25e75a57235748b2434e6cf244952b05b572c39a31b860b9f685a6ccebc08668`.
 Direct hashing of the retained local archive and both staged copies agreed:

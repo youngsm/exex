@@ -75,6 +75,9 @@ The same frozen value can prepare another site after checkout removal. This
 completes only the capture/re-preparation part of section 2; source discovery,
 prepared-reference persistence and durable Experiment/WorkUnit control remain
 deferred. No pimm or scheduler changes are included.
+All 366 regressions pass. The disposable-source example completed both locally
+and from S3DF to NERSC (job `58681142`, exit 0, 14 seconds), with identical source
+and staged-archive identities after removing the author-side temporary trees.
 
 ## Decision and scope
 
