@@ -9,6 +9,8 @@ subprocess failures. Start with the runnable [HPC probe](examples/hpc/launch.py)
 Outputs are application-owned paths; local stdout/stderr go to the printed log path.
 `Local(workdir_root=...)` and `Slurm(workdir_root=...)` choose the execution-host
 parent for temporary unpacked source; see [working directories](docs/minimal-hpc-slice.md#working-directories).
+For native multi-node execution, the [Slurm step example](examples/slurm_step/README.md)
+launches two workers with an ordinary `srun` entrypoint and tests failure propagation.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Durable WorkUnits, retained
