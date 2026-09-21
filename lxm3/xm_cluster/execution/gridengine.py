@@ -1,5 +1,7 @@
+import getpass
 import os
 import re
+import socket
 from typing import List, Optional
 
 from absl import logging
@@ -83,9 +85,9 @@ class GridEngineJobScriptBuilder(
 
 
 class GridEngineHandle:
-    def __init__(self, job_id: str) -> None:
+    def __init__(self, job_id: str, **record) -> None:
         self.job_id = job_id
-        self.record = dict(backend="gridengine", native_id=job_id)
+        self.record = dict(backend="gridengine", native_id=job_id, **record)
 
 
 class GridEngineClient:
@@ -129,7 +131,16 @@ class GridEngineClient:
         )
         job_id = self._cluster.launch(job_script_path)
 
-        handles = [GridEngineHandle(job_id)]
+        handles = [
+            GridEngineHandle(
+                job_id,
+                hostname=self._settings.hostname or socket.gethostname(),
+                username=self._settings.user
+                if self._settings.hostname
+                else getpass.getuser(),
+                script_path=job_script_path,
+            )
+        ]
 
         self._save_job_id(job_name, job_id)
 

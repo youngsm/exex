@@ -135,6 +135,21 @@ after 75/91 seconds respectively. All steps are terminal and neither job remains
 its queue. No implementation changes were needed; this is scheduler/control evidence,
 not GPU-compute or array-cancellation qualification.
 
+The [concrete Job history slice](inspection.md#concrete-job-history) adds
+`WorkUnit.job`, `WorkUnit.source`, `WorkUnit.get_script()` and `lxm3 script`.
+A single inline JSON snapshot in SQLite retains the submitted Job/ArrayJob,
+including its prepared AppBundle, defaults, invocation, executor and source link.
+It is captured after generators/overrides and before submission; native acceptance
+adds the actual endpoint and script path. Reads return independent objects and
+never replay a launcher. This replaces the proposed separate prepared-executable
+registry for submitted-work inspection; no registry or rerun command is added.
+All 498 regressions pass, with 2 integration tests deselected. Fresh processes
+retrieved exact scripts and successful native outcomes for S3DF array `38742940`
+and S3DF-to-NERSC job `58708625`, including with cluster profiles removed from the
+reader config. The [qualification record](inspection.md#job-history-qualification-2026-09-21)
+retains IDs and hashes. There are no pimm changes, new dependencies, migrations,
+schema counters, retries or artifact/continuation work in this slice.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its

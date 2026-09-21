@@ -143,6 +143,7 @@ class SlurmClient:
                 else getpass.getuser(),
                 job_name=job_name,
                 log_directory=log_directory,
+                script_path=job_script_path,
             )
         ]
 

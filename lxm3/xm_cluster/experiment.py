@@ -16,6 +16,7 @@ from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executable_specs
 from lxm3.xm_cluster import inspection
+from lxm3.xm_cluster import job_snapshot
 from lxm3.xm_cluster import metadata
 from lxm3.xm_cluster import packaging
 from lxm3.xm_cluster.execution import gridengine as gridengine_execution
@@ -112,7 +113,9 @@ class ClusterWorkUnit(xm.WorkUnit):
             (payload,) = job_script_builder.flatten_job(job)
             is_array = isinstance(payload, array_job_lib.ArrayJob)
             self._save(
-                task_count=len(payload.args) if is_array else 1, is_array=is_array
+                job=job_snapshot.dumps(payload),
+                task_count=len(payload.args) if is_array else 1,
+                is_array=is_array,
             )
             launch_result = await _launch(
                 self.experiment._experiment_title,
@@ -152,6 +155,22 @@ class ClusterWorkUnit(xm.WorkUnit):
 
     def get_logs(self, *, task: Optional[int] = None, tail: int = 200) -> str:
         return inspection.get_logs(self._record, task=task, tail=tail)
+
+    @property
+    def job(self) -> Union[xm.Job, array_job_lib.ArrayJob, None]:
+        """Independent snapshot of the concrete request, not proof of acceptance."""
+        record = self._record["job"]
+        return job_snapshot.loads(record) if record is not None else None
+
+    @property
+    def source(self) -> Optional[executable_specs.FrozenSource]:
+        """Source associated with this payload, without reading its archive."""
+        job = self.job
+        return job.executable._source if job is not None else None
+
+    def get_script(self) -> str:
+        """Read the saved script from the recorded execution endpoint."""
+        return inspection.get_script(self._record)
 
     def stop(
         self,

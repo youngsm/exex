@@ -112,6 +112,11 @@ def stop(args):
     unit.stop()
 
 
+def script(args):
+    (unit,) = _work_units(args)
+    print(unit.get_script(), end="")
+
+
 def register_management_parsers(parsers: argparse._SubParsersAction):
     experiments_parser = parsers.add_parser(
         "experiments", help="List saved experiments without contacting schedulers."
@@ -135,6 +140,11 @@ def register_management_parsers(parsers: argparse._SubParsersAction):
     stop_parser.add_argument("experiment_id", type=int)
     stop_parser.add_argument("work_unit_id", type=int)
     stop_parser.set_defaults(command=stop)
+
+    script_parser = parsers.add_parser("script", help="Read the saved job script.")
+    script_parser.add_argument("experiment_id", type=int)
+    script_parser.add_argument("work_unit_id", type=int)
+    script_parser.set_defaults(command=script)
 
 
 def _parse_flags(argv):

@@ -168,12 +168,6 @@ class FrozenSource(xm.ExecutableSpec):
 class ClusterExperiment:
     def freeze(self, source: SourceTree) -> FrozenSource: ...
     def sources(self) -> Mapping[str, FrozenSource]: ...
-    def executables(self) -> Mapping[str, AppBundle]: ...
-
-class AppBundle(xm.Executable):
-    # ADD read-only metadata to the existing prepared object, not constructor knobs.
-    id: str
-    source_id: str | None
 ```
 
 Both source specs implement the existing `ExecutableSpec.name` property. The frozen
@@ -187,9 +181,25 @@ changes and untracked nonignored files. No commit/stash/index mutation.
 
 `package(SourceTree)` captures at packaging time; `package(FrozenSource)` never
 rereads the original checkout. Existing container wrappers accept both specs.
-Prepared values still are AppBundles. `sources()` and `executables()` retrieve
-recorded experiment members, including packages not yet submitted. Reuse a recorded
-AppBundle on its prepared target; prepare its FrozenSource again for another target.
+Prepared values still are AppBundles. `sources()` retrieves recorded sources,
+including ones not yet submitted. The proposed `executables()` registry and new
+AppBundle identity fields are deferred: the approved history slice instead retains
+each concrete Job inline on its WorkUnit. Reuse a prepared bundle only on its
+prepared target; prepare its FrozenSource again for another target.
+
+```python
+class ClusterWorkUnit:
+    @property
+    def job(self) -> xm.Job | ArrayJob | None: ...
+    @property
+    def source(self) -> FrozenSource | None: ...
+    def get_script(self) -> str: ...
+```
+
+These getters and `lxm3 script EXPERIMENT_ID WORK_UNIT_ID` are implemented by the
+[concrete history slice](inspection.md#concrete-job-history), not an automatic
+rerun facility. Reads reconstruct independent values; saved intent is not proof
+of submission success. No launcher/callback serialization is involved.
 
 ## 5. WorkUnit control: implement existing methods first
 
@@ -471,11 +481,9 @@ async def wait():
 asyncio.run(wait())  # A timeout only stops waiting.
 
 with experiment:
-    executable = experiment.executables()["<printed-executable-id>"]
-    experiment.add(
-        xm.Job(executable, xc.Local(), args={"seed": 2}),
-        identity="seed-2",
-    )  # This example reuses a package prepared for Local.
+    job = unit.job  # This example assumes a non-array Job.
+    job.args = xm.merge_args(job.args, {"seed": 2})
+    experiment.add(job)  # New WorkUnit; same executable and executor destination.
 ```
 
 No new source capture occurs when adding that seed. To send the same source to

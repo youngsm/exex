@@ -77,13 +77,16 @@ class LocalJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Local]
 
 
 class LocalExecutionHandle:
-    def __init__(self, future: concurrent.futures.Future, log_directory: str) -> None:
+    def __init__(
+        self, future: concurrent.futures.Future, log_directory: str, script_path=None
+    ) -> None:
         self.future = future
         self.record = dict(
             backend="local",
             hostname=socket.gethostname(),
             username=getpass.getuser(),
             log_directory=log_directory,
+            script_path=script_path,
         )
 
     async def wait(self) -> None:
@@ -148,7 +151,7 @@ class LocalClient:
                     )
 
             future = local_executor().submit(task, i)
-            handles.append(LocalExecutionHandle(future, job_log_dir))
+            handles.append(LocalExecutionHandle(future, job_log_dir, job_script_path))
 
         return handles
 

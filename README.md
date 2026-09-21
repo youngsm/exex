@@ -28,8 +28,11 @@ Slurm `stop()` and Local/Slurm `wait_until_complete()`, including after reopenin
 [accept new independent jobs](docs/source-capture.md#retrieve-and-add-another-run)
 without the original checkout or launcher.
 The [management CLI](docs/inspection.md#command-line) exposes `lxm3 experiments`,
-`status`, `logs` and `stop` against that same catalog. `list_experiments()` provides
+`status`, `logs`, `script` and `stop` against that same catalog. `list_experiments()` provides
 metadata-only discovery in Python; no scheduler connection is needed to list runs.
+[WorkUnit history](docs/inspection.md#concrete-job-history) exposes `unit.job`,
+`unit.source` and `unit.get_script()`: the concrete request and its saved script,
+without replaying a launcher. History does not imply hermetic reproducibility.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Keyed submission, prepared

@@ -190,7 +190,13 @@ def test_stop_cli_uses_recorded_target_once_without_polling(saved, capsys):
 
 
 @pytest.mark.parametrize(
-    "command", [("status", "101", "2"), ("logs", "101", "2"), ("stop", "101", "2")]
+    "command",
+    [
+        ("status", "101", "2"),
+        ("logs", "101", "2"),
+        ("stop", "101", "2"),
+        ("script", "101", "2"),
+    ],
 )
 def test_ssh_error_propagates_without_retry(saved, command):
     experiment, _ = saved
@@ -199,6 +205,7 @@ def test_ssh_error_propagates_without_retry(saved, command):
         hostname="unreachable",
         native_id="789",
         job_name="recorded-name",
+        script_path="/saved/job.sh",
     )
     with mock.patch.object(
         slurm.ssh, "run", side_effect=subprocess.CalledProcessError(255, "ssh")
@@ -208,7 +215,7 @@ def test_ssh_error_propagates_without_retry(saved, command):
     assert run.call_count == 1
 
 
-@pytest.mark.parametrize("command", ["status", "logs", "stop"])
+@pytest.mark.parametrize("command", ["status", "logs", "stop", "script"])
 def test_missing_unit_is_an_error_not_an_index_or_a_new_unit(saved, command):
     experiment, _ = saved
     before = experiment._catalog.path.read_bytes()
@@ -249,6 +256,8 @@ def test_cli_reads_zero_based_array_logs_and_rejects_ambiguous_requests(saved):
         (("logs", "101", "1", "--task", "2"), "in range"),
         (("stop", "101", "1"), "only for Slurm"),
         (("stop", "101"), "work_unit_id"),
+        (("script", "101", "1"), "No submission script"),
+        (("script", "101"), "work_unit_id"),
     ],
 )
 def test_cli_errors_exit_nonzero_without_changing_records(saved, command, diagnostic):
@@ -268,6 +277,46 @@ def test_explicit_config_flag_overrides_environment(saved, before_command):
         *arguments, env={**os.environ, "LXM_CONFIG": "/missing/config"}, check=True
     )
     assert "literal [red] title" in result.stdout
+
+
+def test_script_cli_uses_saved_endpoint_and_exact_path(saved, capsys):
+    experiment, _ = saved
+    experiment.work_units()[1]._save(
+        hostname="saved-host", username="saved-user", script_path="/saved ' $/job.sh"
+    )
+    with mock.patch.object(
+        slurm.ssh,
+        "run",
+        return_value=subprocess.CompletedProcess([], 0, "literal [red] $ ' text"),
+    ) as run:
+        invoke("script", "101", "1")
+    run.assert_called_once_with(
+        ["cat", "--", "/saved ' $/job.sh"], hostname="saved-host", username="saved-user"
+    )
+    assert capsys.readouterr().out == "literal [red] $ ' text"
+
+
+@pytest.mark.parametrize("before_command", [False, True])
+def test_script_cli_fresh_process_is_read_only_and_file_errors_propagate(
+    saved, tmp_path, before_command
+):
+    experiment, config_file = saved
+    path = tmp_path / "script ' $ [red]"
+    path.write_text("#!/bin/bash\necho 'literal $ [red]'\n# no final newline")
+    experiment.work_units()[1]._save(script_path=str(path))
+    before = experiment._catalog.path.read_bytes()
+    flag = f"--lxm_config={config_file}"
+    arguments = (
+        [flag, "script", "101", "1"] if before_command else ["script", "101", "1", flag]
+    )
+    result = run_cli(
+        *arguments, env={**os.environ, "LXM_CONFIG": "/missing/config"}, check=True
+    )
+    assert result.stdout == path.read_text()
+    path.unlink()
+    result = run_cli("script", "101", "1")
+    assert result.returncode != 0
+    assert experiment._catalog.path.read_bytes() == before
 
 
 def test_version_help_and_launch_argument_forwarding_are_preserved(tmp_path):

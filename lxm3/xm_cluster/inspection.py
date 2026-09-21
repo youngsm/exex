@@ -95,6 +95,16 @@ def _hostname(record):
     return None if same_host and same_user else host
 
 
+def get_script(record):
+    if record["script_path"] is None:
+        raise xm.NotFoundError("No submission script has been recorded")
+    return ssh.run(
+        ["cat", "--", record["script_path"]],
+        hostname=_hostname(record),
+        username=record["username"],
+    ).stdout
+
+
 def get_status(record):
     if record["backend"] == "gridengine":
         raise NotImplementedError("GridEngine inspection is not implemented")

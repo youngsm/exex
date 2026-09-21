@@ -8,6 +8,9 @@ list_experiments(*, project: str | None = None, config: Config | None = None) ->
 experiment.work_units() -> Mapping[int, ClusterWorkUnit]
 unit.get_status() -> WorkUnitStatus
 unit.get_logs(*, task: int | None = None, tail: int = 200) -> str
+unit.job -> xm.Job | ArrayJob | None
+unit.source -> FrozenSource | None
+unit.get_script() -> str
 ```
 
 `get_experiment()` and `get_logs()` are additions. `work_units()` now uses actual
@@ -80,6 +83,7 @@ lxm3 status 101
 lxm3 status 101 3
 lxm3 logs 101 3 --tail 100
 lxm3 logs 101 3 --task 0 --tail 100
+lxm3 script 101 3
 lxm3 stop 101 3
 ```
 
@@ -99,10 +103,67 @@ was used to create the experiment; this is not discovery across other catalogs.
 - `stop` delegates to [WorkUnit.stop()](control.md), supports Slurm, and targets
   the whole WorkUnit/array. It returns silently without waiting for termination.
   With no accepted execution handle it is a no-op, just like the Python method.
+- `script` prints the saved submission script without decorations or an added
+  newline. An array has one script; this command takes no task index.
 - Missing IDs, invalid arguments, unsupported operations and native/SSH failures
   exit nonzero. Errors propagate; there is no retry, auto-submission or watch loop.
 
 `launch`/`version` are unchanged. Launch-script arguments still follow `--`.
+
+## Concrete job history
+
+After the launcher exits, retrieve the request without importing or rerunning it:
+
+```python
+from lxm3 import xm, xm_cluster as xc
+
+experiment = xc.get_experiment(
+    101, config=xc.Config.from_file("/path/to/lxm.toml")
+)
+unit = experiment.work_units()[3]
+job = unit.job                         # xm.Job, or xc.ArrayJob for an array
+print(job.executable.entrypoint_command)
+print(job.executor.resources)          # Slurm's original allocation request
+print(unit.source.id if unit.source else None)
+print(unit.get_script())
+
+# For a non-array Job, inspect the effective arguments/environment:
+print(xm.merge_args(job.executable.args, job.args).to_list())
+print({**job.executable.env_vars, **job.env_vars})
+```
+
+For an array, `job.args` and `job.env_vars` are broadcast, per-task lists. Package
+defaults remain separate. Positional/keyword ordering, keyword overrides, repeated
+flags, booleans, omitted values and `ShellSafeArg` expansion retain XM's semantics.
+Enum/path/custom argument objects are normalized to their command-line strings;
+retrieval does not import their original Python classes.
+
+The concrete Job is captured after generators and WorkUnit overrides, before
+backend submission. It includes the AppBundle entrypoint, staged archive URI,
+container reference, defaults, prepared destination, source association, invocation
+and executor fields (including native resources and container options). Each read
+reconstructs independent objects. Editing a retrieved Job cannot edit history.
+`job` is `None` before a payload is recorded. `source` is `None` for a payload not
+packaged from SourceTree/FrozenSource, or before a payload exists. Both properties
+are metadata-only; even a missing source archive does not prevent inspection.
+
+An accepted backend handle records the script path and resolved host/user beside
+the existing native ID. `get_script()` reads that exact file through the saved
+endpoint, independent of current cluster profiles or custom log directories. A
+missing reference raises `xm.NotFoundError`; missing files and SSH errors propagate
+once, without retries. Submission failures can retain a Job without an accepted
+handle/script reference: saved intent is not evidence that a job ran.
+
+This is execution provenance, not hermetic replay. Archives/scripts must still be
+retained; image tags, external inputs, installed runtimes and ambient environment
+can change. Only explicitly supplied environment variables are saved, and those
+can contain secrets: protect the catalog and staging directory accordingly. No
+launcher replay, executable registry or automatic rerun command is introduced.
+
+History uses `work_units.job` (one JSON snapshot) and `work_units.script_path` in
+the author catalog; no extra files, ORM, dependency or schema counter. This
+development slice uses a fresh catalog. Existing catalogs are not migrated or
+backfilled; keep their matching checkout and staging data for historical reads.
 
 ## Persistence and observations
 
@@ -111,8 +172,9 @@ was used to create the experiment; this is not discovery across other catalogs.
   project, producing package version, execution endpoint, accepted native job ID,
   generated job name, log directory, array shape and Local outcomes. The subsequent
   source-reuse slice adds a source-membership table; see its separate contract.
-  No launchers, closures, credentials, job environments or full site profiles are
-  serialized.
+  Concrete Job history now also retains explicit package/job environments and
+  source association as described above. No launchers, closures, ambient
+  environment dump or full site profiles are serialized.
 - SQLite allocates WorkUnit IDs inside short transactions. No transaction spans
   SSH, packaging, execution or waiting. There is no ORM, schema counter, migration
   framework, daemon, submission retry or remote catalog. Workers do not open SQLite.
@@ -151,12 +213,46 @@ was used to create the experiment; this is not discovery across other catalogs.
   it into stdout. There is no implicit follow loop or cross-rank merge.
 
 Existing pre-patch jobs are not retroactively imported. GridEngine submissions
-still work, but their inspection adapter is not implemented. Local cancellation,
+and Job/script retrieval work, but its status/log/control adapter is not implemented.
+Local cancellation,
 keyed submission, persistent annotations, prepared-executable
 lookup, outputs and continuation remain
 separate work. This does not complete section 3 of the broader fork plan.
 
 ## Verification
+
+### Job history qualification, 2026-09-21
+
+**498 tests pass, 2 integration tests deselected**, including 19 new history/CLI
+cases. Coverage includes render-identical Job/ArrayJob round trips, all three
+executors and container-option types, package/job merge semantics, generators and
+overrides, mutation isolation, failed submission, missing source/script files,
+recorded endpoint routing, ordinary SSH errors, and fresh-process reads after
+deleting a disposable launcher. Ruff and formatting checks pass.
+
+Live probes used a fresh, isolated author catalog at
+`/sdf/group/neutrino/youngsam/representations/lxm3-history-qualification.DxfVT0/author`.
+The adjacent `lxm.toml` selects S3DF and NERSC staging directories.
+
+| Site | Experiment / WorkUnit | Native job | Outcome |
+| --- | --- | --- | --- |
+| S3DF | 1790024563051216718 / 1 | 38742940 (two-task array) | Both COMPLETED 0:0; 1/2 seconds; one A100 per task |
+| S3DF → NERSC | 1790024563227876806 / 1 | 58708625 | COMPLETED 0:0; 6 seconds; one GPU node |
+
+S3DF used `neutrino:default@ampere` / `preemptable`; NERSC used `m5238_g` / `debug`.
+Both are terminal with empty queue results; these were shell probes, not GPU
+computations. Fresh Python processes reopened both without any cluster profiles,
+retrieved source membership and complete requests, read all task logs, and compared
+saved scripts against scripts regenerated from the saved Jobs: exact matches.
+Fresh `lxm3 script` processes independently produced matching SHA-256 hashes:
+
+- S3DF: `e832c84414c84e320686d0f584b08f271309300340148f40c56534bbe013e689`
+- NERSC: `68aeffae8a5ad0161a97aaee7b8a90bee7e400d73dc35f43859cfc4145b59772`
+
+Both retained source ID `9ddc3620116b50612b561e2d15f23de5997c3e4f743842c95b9eafcbc9ccdc2c`.
+Earlier catalogs and active pimm workflows were not modified.
+
+### Discovery/CLI regressions
 
 The subsequent discovery/CLI slice passes **479 tests, 2 integration tests
 deselected**, including 26 new cases in `tests/cli_test.py`. These cover read-only
