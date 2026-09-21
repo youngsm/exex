@@ -6,7 +6,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
-from typing import Sequence, Tuple
+from typing import Sequence, Tuple, Union
 
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executable_specs
@@ -18,7 +18,9 @@ class PackagingError(Exception):
     """Error raised when packaging fails."""
 
 
-def _create_entrypoint_cmds(python_package: executable_specs.PythonPackage) -> str:
+def _create_entrypoint_cmds(
+    python_package: Union[executable_specs.PythonPackage, executable_specs.SourceTree],
+) -> str:
     if isinstance(python_package.entrypoint, executable_specs.ModuleName):
         cmds = ["python3 -m {}".format(python_package.entrypoint.module_name)]
     elif isinstance(python_package.entrypoint, executable_specs.CommandList):

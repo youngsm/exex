@@ -17,11 +17,14 @@ The [ShifterContainer API](docs/shifter-container.md) wraps one packaged entrypo
 in an already-installed site image, with explicit bind mounts and Shifter modules.
 Executors take one `container_options` keyword accepting `SingularityOptions`,
 `DockerOptions`, `ShifterOptions` or `None`, matching the executable's runtime.
+For dirty-checkout iteration, [SourceTree and experiment.freeze()](docs/source-capture.md)
+capture raw files without a build or installation and reuse them after the checkout
+changes or disappears. The [source probe](examples/source/launch.py) demonstrates this.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
-are future work, not this slice's release requirements. Durable WorkUnits, retained
-source/output APIs, container image builds/imports, continuation and Vertex are not
-implemented.
+are future work, not this slice's release requirements. Durable WorkUnits, source
+lookup/reopen, retained outputs, container image builds/imports, continuation and
+Vertex are not implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers

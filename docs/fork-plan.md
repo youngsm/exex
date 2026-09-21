@@ -67,6 +67,15 @@ and temporary-source cleanup. Both ran for 21 seconds; results were retained.
 Image builds/imports, tag resolution and implicit worker launch remain outside
 this API.
 
+The [raw-source slice](source-capture.md) adds `SourceTree`, `FrozenSource` and
+`experiment.freeze()`, using the existing packaging/container interfaces. It
+retains selected working-tree files in normalized local archives, with a
+target-independent identity and no build, install, Git mutation or catalog.
+The same frozen value can prepare another site after checkout removal. This
+completes only the capture/re-preparation part of section 2; source discovery,
+prepared-reference persistence and durable Experiment/WorkUnit control remain
+deferred. No pimm or scheduler changes are included.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its

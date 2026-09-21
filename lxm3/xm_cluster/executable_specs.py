@@ -1,6 +1,6 @@
 import os
 import re
-from typing import List, NamedTuple, Union
+from typing import List, NamedTuple, Optional, Sequence, Union
 
 import attr
 
@@ -60,6 +60,45 @@ class CommandList(NamedTuple):
     """List of commands to execute when entering this project."""
 
     commands: List[str]
+
+
+@attr.s(auto_attribs=True)
+class SourceTree(job_blocks.ExecutableSpec):
+    """Run selected working-tree files directly, without a build or pip install.
+
+    Relative paths resolve against the launcher. files is an allowlist of relative
+    file paths; None selects tracked and nonignored untracked files using Git.
+    Capture happens during packaging, or earlier through experiment.freeze().
+    """
+
+    entrypoint: Union[ModuleName, CommandList]
+    path: Union[str, os.PathLike] = attr.field(
+        default=".",
+        converter=lambda path: utils.resolve_path_relative_to_launcher(os.fspath(path)),
+    )
+    files: Optional[Sequence[str]] = attr.field(default=None, kw_only=True)
+
+    @property
+    def name(self) -> str:
+        return name_from_path(os.fspath(self.path))
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class FrozenSource(job_blocks.ExecutableSpec):
+    """Immutable source captured by experiment.freeze(); no checkout is needed.
+
+    id includes selected paths, bytes, executable bits and entrypoint. The other
+    fields are private packaging data, not a public reconstruction interface.
+    """
+
+    id: str
+    _name: str = attr.field(repr=False)
+    _archive_path: str = attr.field(repr=False)
+    _entrypoint_command: str = attr.field(repr=False)
+
+    @property
+    def name(self) -> str:
+        return self._name
 
 
 @attr.s(auto_attribs=True)
@@ -248,7 +287,9 @@ class PexBinary(job_blocks.ExecutableSpec):
 class _ContainerSpec(job_blocks.ExecutableSpec):
     """Source package paired with an independently prepared runtime image."""
 
-    entrypoint: Union[UniversalPackage, PythonPackage, PexBinary]
+    entrypoint: Union[
+        UniversalPackage, PythonPackage, PexBinary, SourceTree, FrozenSource
+    ]
 
     @property
     def name(self) -> str:

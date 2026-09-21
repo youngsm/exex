@@ -17,12 +17,14 @@ from lxm3._vendor.xmanager.xm import pattern_matching as pm
 from lxm3.xm_cluster import array_job as array_job_lib
 from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
+from lxm3.xm_cluster import executable_specs
 from lxm3.xm_cluster import metadata
 from lxm3.xm_cluster import packaging
 from lxm3.xm_cluster.execution import gridengine as gridengine_execution
 from lxm3.xm_cluster.execution import job_script_builder
 from lxm3.xm_cluster.execution import local as local_execution
 from lxm3.xm_cluster.execution import slurm as slurm_execution
+from lxm3.xm_cluster.packaging import source as source_capture
 from lxm3.xm_cluster.packaging.router import _package_target
 
 
@@ -184,6 +186,12 @@ class ClusterExperiment(xm.Experiment):
     def package_async(self, packageable: xm.Packageable) -> Awaitable[xm.Executable]:
         """Queue a specification; package() performs the build and transfer."""
         return self._async_packager.add(packageable)
+
+    def freeze(
+        self, source: executable_specs.SourceTree
+    ) -> executable_specs.FrozenSource:
+        """Capture source now, without building, uploading or submitting a job."""
+        return source_capture.freeze(source, self._config.local_settings().storage_root)
 
     def _create_experiment_unit(
         self,

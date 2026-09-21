@@ -18,6 +18,7 @@ from lxm3.xm_cluster.execution import gridengine
 from lxm3.xm_cluster.execution import local
 from lxm3.xm_cluster.execution import slurm
 from lxm3.xm_cluster.packaging import create_archive
+from lxm3.xm_cluster.packaging import source as source_capture
 
 
 def singularity_image_path(image_name: str):
@@ -51,7 +52,7 @@ def _package_python_package(
     py_package: cluster_executable_specs.PythonPackage,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     with tempfile.TemporaryDirectory() as staging:
         entrypoint_cmd, archive_name = create_archive.create_python_archive(
@@ -76,7 +77,7 @@ def _package_pex_binary(
     spec: cluster_executable_specs.PexBinary,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     with tempfile.TemporaryDirectory() as staging:
         entrypoint, archive_name = create_archive.create_pex_archive(staging, spec)
@@ -99,7 +100,7 @@ def _package_universal_package(
     universal_package: cluster_executable_specs.UniversalPackage,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     with tempfile.TemporaryDirectory() as staging:
         entrypoint, archive_name = create_archive.create_universal_archive(
@@ -120,11 +121,44 @@ def _package_universal_package(
     )
 
 
+def _package_source_tree(
+    source: cluster_executable_specs.SourceTree,
+    packageable: xm.Packageable,
+    artifact_store: artifacts.ArtifactStore,
+    local_storage_root: str,
+):
+    return _package_frozen_source(
+        source_capture.freeze(source, local_storage_root),
+        packageable,
+        artifact_store,
+        local_storage_root,
+    )
+
+
+def _package_frozen_source(
+    source: cluster_executable_specs.FrozenSource,
+    packageable: xm.Packageable,
+    artifact_store: artifacts.ArtifactStore,
+    local_storage_root: str,
+):
+    source_capture.verify(source)
+    deployed_archive_path = _transfer_file(
+        artifact_store, source._archive_path, archive_path(f"{source.id}.tar")
+    )
+    return cluster_executables.AppBundle(
+        name=source.name,
+        entrypoint_command=source._entrypoint_command,
+        resource_uri=deployed_archive_path,
+        args=packageable.args,
+        env_vars=packageable.env_vars,
+    )
+
+
 def _package_pdm_project(
     pdm_project: cluster_executable_specs.PDMProject,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     py_package = cluster_executable_specs.PythonPackage(
         pdm_project.entrypoint,
@@ -140,7 +174,7 @@ def _package_pdm_project(
     singularity_image = "docker-daemon://{}:latest".format(py_package.name)
     spec = cluster_executable_specs.SingularityContainer(py_package, singularity_image)
     return _package_singularity_container(
-        spec, packageable, artifact_store, image_cache_dir
+        spec, packageable, artifact_store, local_storage_root
     )
 
 
@@ -148,7 +182,7 @@ def _package_python_container(
     python_container: cluster_executable_specs.PythonContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     py_package = cluster_executable_specs.PythonPackage(
         python_container.entrypoint, path=python_container.path
@@ -163,7 +197,7 @@ def _package_python_container(
     singularity_image = "docker-daemon://{}:latest".format(py_package.name)
     spec = cluster_executable_specs.SingularityContainer(py_package, singularity_image)
     return _package_singularity_container(
-        spec, packageable, artifact_store, image_cache_dir
+        spec, packageable, artifact_store, local_storage_root
     )
 
 
@@ -200,13 +234,15 @@ def _package_singularity_container(
     container: cluster_executable_specs.SingularityContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     executable = _PACKAGING_ROUTER(
-        container.entrypoint, packageable, artifact_store, image_cache_dir
+        container.entrypoint, packageable, artifact_store, local_storage_root
     )
     deploy_container_path = _maybe_push_singularity_image(
-        container.image_path, artifact_store, image_cache_dir
+        container.image_path,
+        artifact_store,
+        os.path.join(local_storage_root, "image_cache"),
     )
     executable.container_image = cluster_executables.ContainerImage(
         name=deploy_container_path,
@@ -219,10 +255,10 @@ def _package_docker_container(
     container: cluster_executable_specs.DockerContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     executable = _PACKAGING_ROUTER(
-        container.entrypoint, packageable, artifact_store, image_cache_dir
+        container.entrypoint, packageable, artifact_store, local_storage_root
     )
     docker_image = container.image
     executable.container_image = cluster_executables.ContainerImage(
@@ -236,10 +272,10 @@ def _package_shifter_container(
     container: cluster_executable_specs.ShifterContainer,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     executable = _PACKAGING_ROUTER(
-        container.entrypoint, packageable, artifact_store, image_cache_dir
+        container.entrypoint, packageable, artifact_store, local_storage_root
     )
     executable.container_image = cluster_executables.ContainerImage(
         name=container.image,
@@ -252,7 +288,7 @@ def _throw_on_unknown_executable(
     executable: Any,
     packageable: xm.Packageable,
     artifact_store: artifacts.ArtifactStore,
-    image_cache_dir: str,
+    local_storage_root: str,
 ):
     del artifact_store
     raise TypeError(
@@ -265,6 +301,8 @@ _PACKAGING_ROUTER = pattern_matching.match(
     _package_python_package,
     _package_pex_binary,
     _package_universal_package,
+    _package_source_tree,
+    _package_frozen_source,
     _package_pdm_project,
     _package_python_container,
     _package_singularity_container,
@@ -325,9 +363,9 @@ def packaging_router(
     artifact_store = _get_artifact_store(
         packageable.executor_spec, config=config, project=project
     )
-    image_cache_dir = os.path.join(config.local_settings().storage_root, "image_cache")
+    local_storage_root = config.local_settings().storage_root
     executable = _PACKAGING_ROUTER(
-        packageable.executable_spec, packageable, artifact_store, image_cache_dir
+        packageable.executable_spec, packageable, artifact_store, local_storage_root
     )
     executable._target = target
     return executable
