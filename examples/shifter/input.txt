@@ -1,0 +1,2 @@
+literal input $value ' with spaces
+and a newline

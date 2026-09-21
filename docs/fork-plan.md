@@ -40,6 +40,23 @@ from completed workload evidence. No container builds, image pulls or training r
 are part of this slice. Source freezing, reopening/lifecycle APIs, retained outputs,
 continuation, new runtimes/backends and pimm migration remain deferred.
 
+The shared-storage multi-node path is now qualified without a new step API:
+`Slurm(workdir_root=...)` unpacks once, and an ordinary packaged driver launches
+workers with native `srun`. NERSC jobs `58674695` and `58674935` proved distinct
+nodes, shared source, successful completion and failed-worker propagation. See
+the [Slurm step example](../examples/slurm_step/README.md). Container execution
+and GPU collectives are separate gates, not implied by this host-only result.
+
+The prebuilt-container slice adds no public API. The [SIF example](../examples/sif/README.md)
+qualified real GPU computation, input/output mounts, failure propagation and
+source-only image reuse on S3DF. Its one-line library fix preserves Slurm's
+`CUDA_VISIBLE_DEVICES` in the container environment file. The independent
+[native Shifter example](shifter-slice.md) qualified a pinned NERSC image, read-only
+input, task-level GPU visibility, computation and intentional failure, submitted
+from S3DF. Both retain outputs and clean up temporary source. Combined regressions:
+270 passed, 2 integration tests deselected. No first-class Shifter runtime, image
+builder, multi-node container collective or pimm migration is claimed by these probes.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its
@@ -65,13 +82,13 @@ vendored XManager, change repository visibility or choose a new license in this 
 | --- | --- | --- |
 | Launch API and CLI | Keep async/sync contexts, JobGenerators, `xm.Job`, `ArrayJob`, `lxm3 launch`. Add inspection commands, not a second launch CLI. | `xm_cluster/experiment.py`, `cli/cli.py` |
 | Python/source packaging | Keep `PythonPackage`, `UniversalPackage`, Fileset and AppBundle. Add raw-source capture and retained re-preparation. | `executable_specs.py`, `packaging/create_archive.py`, `packaging/router.py` |
-| Containers | Keep local Docker/Singularity and dependency/source separation. Harden identities; add Shifter and explicit build outputs. | `executables.py`, `executors.py`, `singularity/image_cache.py`, `docker/build_image.py` |
+| Containers | Qualify prebuilt Singularity and native Shifter composition first; retain source/dependency separation. Typed runtime additions and image builds are separate reviews. | `executable_specs.py`, `executors.py`, `execution/job_script_builder.py`, examples |
 | Site configuration | Keep TOML. Make selected site/project explicit throughout packaging and dispatch. | `config.py`, executor specs, cached clients and artifact-store factory |
 | SSH | Use system OpenSSH configuration for commands and transfers to the same alias; retain the storage interface. | `clusters/slurm.py`, `execution/job_script_builder.py`, `artifacts.py` |
 | Persistent control | Add a small SQLite store and implement existing XM WorkUnit lifecycle methods. | `experiment.py`, `metadata.py`, native execution handles |
 | Retained results | Extend the existing storage path with content identity, output capture, input reuse and publication receipts. | `artifacts.py`, job-script completion path, WorkUnit accessors |
 | W&B | Keep `contrib.wandb.configure_wandb`; add actual run-link reporting and provenance. | `contrib/wandb.py`, WorkUnit metadata, application writer |
-| Allocation ownership | Add multi-node bootstrap, borrowed steps and attached allocation context; continuation follows separately. | `executors.py`, `execution/slurm.py`, `clusters/slurm.py` |
+| Allocation ownership | Keep native task launch through entrypoints; borrowed-step and attached-allocation APIs remain separate future work. | `executors.py`, `execution/slurm.py`, `clusters/slurm.py` |
 | Vertex | Add a native executor and durable object staging; it is not present in the vendored XM copy. | executor/spec, packaging route, execution adapter |
 | pimm | Adapt authoring to XM jobs; keep training, checkpoint and logger semantics application-owned. | pimm integration, changed only with scoped approval |
 
@@ -184,10 +201,14 @@ independent of scheduling and requires separately authorized destinations.
 
 ## 5. Extend existing runtimes, not rebuild packaging
 
-- Add `ShifterContainer`, a SHIFTER image kind, runtime module/mount options,
-  preparation/import and script rendering. Use returned pinned Shifter IDs; retain
-  upstream OCI provenance separately. Explicit site-installed SIF references must
-  not be confused with author-local `SingularityContainer.image_path`.
+- Start with prebuilt images and the existing interfaces: `SingularityContainer`
+  for an author-readable SIF; native Slurm `image`/`module` resources and a packaged
+  `srun`/Shifter driver for NERSC. Resolve existing Shifter images to their native
+  IDs before submission; do not equate those IDs with OCI digests. Keep the driver
+  outside the container and resolve GPU visibility at the native task boundary.
+  A first-class `ShifterContainer` and automatic preparation/import are separate
+  proposals, not prerequisites for this qualification. Execution-site SIF paths
+  must not be confused with author-local `SingularityContainer.image_path`.
 - Keep actual SIF hashes and immutable cache blob paths, not mutable tag symlinks.
   Resolve mutable references during preparation. Reuse prepared site images rather
   than importing/converting in each rank or implementing another Shifter cache.
@@ -205,14 +226,16 @@ runtime, mutable tags cannot change prepared jobs, non-empty mounts work, and th
 real S3DF/NERSC image paths are qualified. Existing compatible pinned images suffice
 for initial HPC training; general builders are not a prerequisite.
 
-## 6. Add distributed Slurm and allocation ownership
+## 6. Qualify distributed Slurm; add allocation ownership separately
 
-- Replace the hardcoded single-task assumption with explicit node/task topology and
-  per-node bootstrap via `srun`. Each node extracts its own source or uses explicitly
-  shared prepared storage. Prefixing the existing command with `srun` is insufficient:
-  today's temporary work directory is created only on the batch node.
-- Expose framework-neutral topology. Applications own torchrun, TF_CONFIG, JAX or MPI
-  setup. Preserve one-task/array behavior and propagate failed ranks coherently.
+- Native node/task resources describe the allocation; the batch entrypoint runs
+  once. With an explicitly shared `workdir_root`, that entrypoint can use `srun`
+  to launch workers against the single unpacked source tree. This path is qualified;
+  no `SlurmStep`, automatic worker replication or per-node extraction is required.
+- Applications own torchrun, TF_CONFIG, JAX or MPI setup and consume native topology.
+  Qualify container placement and GPU collectives separately; a container around
+  the batch driver is not automatically a container around each worker. Node-local
+  source distribution remains outside the shared-storage contract.
 - Add borrowed-step execution and an attached owned `salloc` context. Batch owns its
   allocation; a borrowed step never cancels its parent/siblings; context exit releases
   only its owned allocation. Keep native `srun`/`salloc` lifetimes explicit.
@@ -221,8 +244,8 @@ for initial HPC training; general builders are not a prerequisite.
   allocation chaining is conditional on native mechanisms failing the real workflow,
   and needs explicit approval, bounded ownership and cancellation of future slots.
 
-Gate: a two-node non-ML task proves distinct ranks and failed-rank propagation, then
-bounded GPU collective/training tests. Step cancellation leaves parent/siblings alive;
+Gate: the two-node host probe has proved distinct ranks and failed-rank propagation;
+bounded GPU collective/training tests remain. Step cancellation leaves parent/siblings alive;
 owned sessions release their allocations. No standing allocation, placement resolver
 or implicit scron/supervisor installation.
 

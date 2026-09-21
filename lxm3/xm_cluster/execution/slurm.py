@@ -19,7 +19,7 @@ class SlurmJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Slurm]
     ARRAY_TASK_ID = "SLURM_ARRAY_TASK_ID"
     ARRAY_TASK_OFFSET = 1
     JOB_SCRIPT_SHEBANG = "#!/usr/bin/bash -l"
-    JOB_ENV_PATTERN = "^(SLURM_)"
+    JOB_ENV_PATTERN = "^(SLURM_|CUDA_VISIBLE_DEVICES=)"
 
     @classmethod
     def _is_gpu_requested(cls, executor: executors.Slurm) -> bool:

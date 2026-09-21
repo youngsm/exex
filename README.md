@@ -11,10 +11,13 @@ Outputs are application-owned paths; local stdout/stderr go to the printed log p
 parent for temporary unpacked source; see [working directories](docs/minimal-hpc-slice.md#working-directories).
 For native multi-node execution, the [Slurm step example](examples/slurm_step/README.md)
 launches two workers with an ordinary `srun` entrypoint and tests failure propagation.
+Prebuilt-container examples cover [SIF execution](examples/sif/README.md) and
+[native Shifter composition](docs/shifter-slice.md), with separate qualification records.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Durable WorkUnits, retained
-source/output APIs, Shifter, continuation and Vertex are not implemented.
+source/output APIs, a first-class Shifter runtime, continuation and Vertex are not
+implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers
