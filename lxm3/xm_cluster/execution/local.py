@@ -117,6 +117,7 @@ class LocalClient:
             num_jobs = 1
 
         console.info(f"Launching {num_jobs} jobs locally...")
+        console.info(f"Logs: {job_log_dir}/task-*.log")
         handles = []
         for i in range(num_jobs):
 
@@ -128,10 +129,14 @@ class LocalClient:
                             i + LocalJobScriptBuilder.ARRAY_TASK_OFFSET
                         ),
                     }
-                subprocess.run(
-                    ["bash", job_script_path],
-                    env={**os.environ, **additional_env},
-                )
+                with open(os.path.join(job_log_dir, f"task-{i}.log"), "wb") as log:
+                    subprocess.run(
+                        ["bash", job_script_path],
+                        env={**os.environ, **additional_env},
+                        stdout=log,
+                        stderr=subprocess.STDOUT,
+                        check=True,
+                    )
 
             future = local_executor().submit(task, i)
             handles.append(LocalExecutionHandle(future))

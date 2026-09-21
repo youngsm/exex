@@ -1,12 +1,12 @@
 import datetime
 import os
 import shutil
+import tempfile
+import uuid
 from typing import Optional, Tuple
 
 import attr
 import fsspec
-from fsspec.implementations import local
-from fsspec.implementations import sftp
 
 
 @attr.s(auto_attribs=True)
@@ -69,7 +69,9 @@ class ArtifactStore:
         path = self.normalize_path(rpath)
 
         self._filesystem.makedirs(os.path.dirname(path), exist_ok=True)
-        self._filesystem.put(lpath, path)
+        temporary_path = f"{path}.{uuid.uuid4().hex}.tmp"
+        self._filesystem.put_file(lpath, temporary_path)
+        self._filesystem.mv(temporary_path, path)
 
         return path
 
@@ -77,25 +79,15 @@ class ArtifactStore:
         path = self.normalize_path(rpath)
 
         self._filesystem.makedirs(os.path.dirname(path), exist_ok=True)
-        self._filesystem.write_text(path, text)
+        self._filesystem.pipe_file(path, text.encode())
 
         return path
 
     def put_fileobj(self, fileobj, rpath: str) -> str:
-        path = self.normalize_path(rpath)
-
-        self._filesystem.makedirs(os.path.dirname(path), exist_ok=True)
-
-        filesystem = self._filesystem
-        if isinstance(filesystem, local.LocalFileSystem):
-            with filesystem.open(path, "wb") as fout:
-                shutil.copyfileobj(fileobj, fout)
-        elif isinstance(filesystem, sftp.SFTPFileSystem):
-            filesystem.ftp.putfo(fileobj, path)
-        else:
-            raise NotImplementedError()
-
-        return path
+        with tempfile.NamedTemporaryFile() as source:
+            shutil.copyfileobj(fileobj, source)
+            source.flush()
+            return self.put_file(source.name, rpath)
 
     def should_update(self, lpath: str, rpath: str) -> Tuple[bool, str]:
         if not self.exists(rpath):

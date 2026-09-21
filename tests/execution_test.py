@@ -1,6 +1,8 @@
+import json
 import os
+import shlex
 import subprocess
-import textwrap
+import sys
 import unittest
 import zipfile
 from unittest import mock
@@ -40,73 +42,48 @@ def _create_docker_image(name):
 
 
 class JobScriptBuilderTest(parameterized.TestCase):
-    def test_env_vars(self):
-        env_var_str = job_script._create_env_vars(
-            [{"FOO": "BAR1"}, {"FOO": "BAR2"}], "LXM_TASK_ID", 0
+    def _evaluate(self, envs, args=None, task=0):
+        probe = 'import json,os,sys; print(json.dumps([sys.argv[1:], {k: os.getenv(k) for k in ("FOO", "BAR")}]))'
+        script = "\n".join(
+            [
+                f"LXM_TASK_ID={task}",
+                job_script._create_env_vars(envs, "LXM_TASK_ID", 0),
+                job_script._create_args(args or [[]] * len(envs), "LXM_TASK_ID", 0),
+                f'{shlex.quote(sys.executable)} -c {shlex.quote(probe)} "$@"',
+            ]
         )
-        expected = textwrap.dedent("""\
-            FOO_0="BAR1"
-            FOO_1="BAR2"
-            FOO=$(eval echo \\$"FOO_$LXM_TASK_ID")
-            export FOO""")
-        self.assertEqual(env_var_str, expected)
+        return json.loads(
+            subprocess.check_output(["sh", "-e", "-c", script], text=True)
+        )
+
+    def test_env_vars(self):
+        envs = [{"FOO": "BAR1"}, {"FOO": "BAR2"}]
+        self.assertEqual(self._evaluate(envs, task=0)[1]["FOO"], "BAR1")
+        self.assertEqual(self._evaluate(envs, task=1)[1]["FOO"], "BAR2")
 
     def test_empty_env_vars(self):
         self.assertEqual(job_script._create_env_vars([{}], "LXM_TASK_ID", 0), "")
 
     def test_common_values(self):
-        env_var_str = job_script._create_env_vars(
-            [{"FOO": "BAR", "BAR": "1"}, {"FOO": "BAR", "BAR": "2"}], "LXM_TASK_ID", 0
-        )
-        expected = textwrap.dedent("""\
-            export FOO="BAR"
-            BAR_0="1"
-            BAR_1="2"
-            BAR=$(eval echo \\$"BAR_$LXM_TASK_ID")
-            export BAR""")
-        self.assertEqual(env_var_str, expected)
+        envs = [{"FOO": "BAR", "BAR": "1"}, {"FOO": "BAR", "BAR": "2"}]
+        self.assertEqual(self._evaluate(envs, task=1)[1], {"FOO": "BAR", "BAR": "2"})
 
     def test_different_keys(self):
-        with self.assertRaises(ValueError):
-            job_script._create_env_vars(
-                [{"FOO": "BAR1"}, {"BAR": "BAR2"}], "LXM_TASK_ID", 0
-            )
+        envs = [{"FOO": "BAR1"}, {"BAR": "BAR2"}]
+        self.assertEqual(self._evaluate(envs, task=1)[1]["BAR"], "BAR2")
 
     def test_args(self):
-        args_str = job_script._create_args(
-            [["--seed=1", "--task=1"], ["--seed=2", "--task=2"]], "LXM_TASK_ID", 0
-        )
-        expected = textwrap.dedent("""\
-            TASK_CMD_ARGS_0="--seed=1 --task=1"
-            TASK_CMD_ARGS_1="--seed=2 --task=2"
-            TASK_CMD_ARGS=$(eval echo \\$"TASK_CMD_ARGS_$LXM_TASK_ID")
-            eval set -- $TASK_CMD_ARGS""")
-        self.assertEqual(args_str, expected)
+        args = [["--seed=1", "--task=1"], ["--seed=2", "--task=2"]]
+        self.assertEqual(self._evaluate([{}, {}], args, task=1)[0], args[1])
 
     def test_empty_args(self):
         self.assertEqual(job_script._create_args([], "LXM_TASK_ID", 0), "")
-        self.assertEqual(
-            job_script._create_args([[]], "LXM_TASK_ID", 0),
-            textwrap.dedent(
-                """\
-                TASK_CMD_ARGS_0=""
-                TASK_CMD_ARGS=$(eval echo \\$"TASK_CMD_ARGS_$LXM_TASK_ID")
-                eval set -- $TASK_CMD_ARGS""",
-            ),
-        )
+        self.assertEqual(self._evaluate([{}])[0], [])
 
     def test_ml_collections_quoting(self):
         args = xm.SequentialArgs.from_collection({"config.name": "train[:90%]"})
         args = args.to_list()
-        self.assertEqual(
-            job_script._create_args([args], "LXM_TASK_ID", 0),
-            textwrap.dedent(
-                """\
-                TASK_CMD_ARGS_0="--config.name='train[:90%]'"
-                TASK_CMD_ARGS=$(eval echo \\$"TASK_CMD_ARGS_$LXM_TASK_ID")
-                eval set -- $TASK_CMD_ARGS""",
-            ),
-        )
+        self.assertEqual(self._evaluate([{}], [args])[0], ["--config.name=train[:90%]"])
 
 
 class LocalExecutionTest(parameterized.TestCase):
@@ -143,7 +120,8 @@ class LocalExecutionTest(parameterized.TestCase):
         settings = config.LocalSettings({})
         client = local.LocalClient(settings, artifact)
         with mock.patch.object(subprocess, "run"):
-            client.launch("test_job", job)
+            for handle in client.launch("test_job", job):
+                handle.future.result()
 
     def _run_job_script(self, job_script_content, env=None):
         job_script = self.create_tempfile("job.sh", content=job_script_content)
@@ -400,7 +378,7 @@ class SlurmExecutionTest(parameterized.TestCase):
         settings = config.ClusterSettings({})
         client = slurm.SlurmClient(settings, artifact)
         with mock.patch.object(slurm_cluster.SlurmCluster, "launch") as mock_launch:
-            mock_launch.return_value = slurm_cluster.parse_job_id("job 1")
+            mock_launch.return_value = slurm_cluster.parse_job_id("1")
             client.launch("test_job", job)
 
 

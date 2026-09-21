@@ -742,9 +742,12 @@ class Experiment(abc.ABC):
 
   def __exit__(self, exc_type, exc_value, traceback):  # pylint:disable=redefined-outer-name
     _current_experiment.reset(self._current_experiment_token)
-    self._wait_for_tasks()
-    self._event_loop.call_soon_threadsafe(self._event_loop.stop)
-    self._event_loop_thread.join()
+    try:
+      self._wait_for_tasks()
+    finally:
+      self._event_loop.call_soon_threadsafe(self._event_loop.stop)
+      self._event_loop_thread.join()
+      self._event_loop.close()
 
   async def __aenter__(self):
     self._current_async_experiment_token = _current_experiment.set(self)

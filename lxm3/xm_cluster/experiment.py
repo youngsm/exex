@@ -126,7 +126,13 @@ class ClusterWorkUnit(xm.WorkUnit):
 
     async def wait_for_local_jobs(self, is_exit_abrupt: bool):
         if not is_exit_abrupt:
-            await asyncio.gather(*[handle.wait() for handle in self._local_handles])
+            results = await asyncio.gather(
+                *[handle.wait() for handle in self._local_handles],
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, BaseException):
+                    raise result
 
     @property
     def work_unit_id(self) -> int:
@@ -156,7 +162,7 @@ class ClusterExperiment(xm.Experiment):
         self.launched_jobs = []
         self.launched_jobs_args = []
         self._work_units = []
-        self._experiment_id = int(time.time() * 10**3)
+        self._experiment_id = time.time_ns()
         self._experiment_title = experiment_title
         self._vcs = vcs
         self._config = (
@@ -218,24 +224,25 @@ class ClusterExperiment(xm.Experiment):
     def _wait_for_local_jobs(self, is_exit_abrupt: bool):
         if self._work_units:
             if any([wu._local_handles for wu in self._work_units]):
-                console.info(
-                    "Waiting for local jobs to complete. "
-                    "Press Ctrl+C to terminate them and exit"
-                )
+                console.info("Waiting for local jobs to complete.")
         for unit in self._work_units:
             self._create_task(unit.wait_for_local_jobs(is_exit_abrupt))
 
     def __exit__(self, exc_type, exc_value, traceback):
         # Flush `.add` calls.
-        self._wait_for_tasks()
-        self._wait_for_local_jobs(exc_value is not None)
-        return super().__exit__(exc_type, exc_value, traceback)
+        try:
+            self._wait_for_tasks()
+            self._wait_for_local_jobs(exc_value is not None)
+        finally:
+            super().__exit__(exc_type, exc_value, traceback)
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         # Flush `.add` calls.
-        await self._await_for_tasks()
-        self._wait_for_local_jobs(exc_value is not None)
-        return await super().__aexit__(exc_type, exc_value, traceback)
+        try:
+            await self._await_for_tasks()
+            self._wait_for_local_jobs(exc_value is not None)
+        finally:
+            await super().__aexit__(exc_type, exc_value, traceback)
 
     @property
     def work_unit_count(self) -> int:

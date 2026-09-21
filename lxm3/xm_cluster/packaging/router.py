@@ -1,11 +1,7 @@
+import hashlib
 import os
 import tempfile
 from typing import Any, Optional, Sequence
-
-import fsspec
-import fsspec.implementations
-import fsspec.implementations.local
-import rich.progress
 
 from lxm3 import singularity
 from lxm3 import xm
@@ -32,32 +28,23 @@ def archive_path(archive_name: str):
     return os.path.join("archives", archive_name)
 
 
-def _transfer_file_with_progress(
+def _transfer_file(
     artifact_store: artifacts.ArtifactStore,
     lpath: str,
     rpath: str,
 ) -> str:
-    should_update, reason = artifact_store.should_update(lpath, rpath)
-
-    basename = os.path.basename(lpath)
-    if should_update:
-        console.info(f"Transferring {basename} ({reason})")
-        with (
-            rich.progress.Progress(
-                rich.progress.TextColumn("[progress.description]{task.description}"),
-                rich.progress.BarColumn(),
-                rich.progress.TaskProgressColumn(),
-                rich.progress.TimeRemainingColumn(),
-                rich.progress.TransferSpeedColumn(),
-                console=console.console,
-            ) as progress,
-            progress.open(lpath, mode="rb", description=os.path.basename(lpath)) as fin,
-        ):
-            put_path = artifact_store.put_fileobj(fin, rpath)
-        return put_path
-    else:
-        console.info(f"Skipped {basename}")
-        return artifact_store.get_file_info(rpath).path
+    content_hash = hashlib.sha256()
+    with open(lpath, "rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            content_hash.update(block)
+    directory, name = os.path.split(rpath)
+    rpath = os.path.join(
+        directory, content_hash.hexdigest() + os.path.splitext(name)[1]
+    )
+    if not artifact_store.exists(rpath):
+        console.info(f"Staging {os.path.basename(lpath)}")
+        return artifact_store.put_file(lpath, rpath)
+    return artifact_store.normalize_path(rpath)
 
 
 def _package_python_package(
@@ -72,7 +59,7 @@ def _package_python_package(
         )
         local_archive_path = os.path.join(staging, archive_name)
         push_archive_name = os.path.basename(local_archive_path)
-        deployed_archive_path = _transfer_file_with_progress(
+        deployed_archive_path = _transfer_file(
             artifact_store, local_archive_path, archive_path(push_archive_name)
         )
 
@@ -95,7 +82,7 @@ def _package_pex_binary(
         entrypoint, archive_name = create_archive.create_pex_archive(staging, spec)
         local_archive_path = os.path.join(staging, archive_name)
         push_archive_name = os.path.basename(local_archive_path)
-        deployed_archive_path = _transfer_file_with_progress(
+        deployed_archive_path = _transfer_file(
             artifact_store, local_archive_path, archive_path(push_archive_name)
         )
 
@@ -120,7 +107,7 @@ def _package_universal_package(
         )
         local_archive_path = os.path.join(staging, os.path.basename(archive_name))
         push_archive_name = os.path.basename(local_archive_path)
-        deployed_archive_path = _transfer_file_with_progress(
+        deployed_archive_path = _transfer_file(
             artifact_store, local_archive_path, archive_path(push_archive_name)
         )
 
@@ -186,35 +173,23 @@ def _maybe_push_singularity_image(
     image_cache_dir: str,
 ) -> str:
     transport, _ = singularity.uri.split(singularity_image)
-    is_local_fs = isinstance(
-        artifact_store.filesystem, fsspec.implementations.local.LocalFileSystem
-    )
     # TODO(yl): Add support for other transports.
     # TODO(yl): think about keeping multiple versions of the container in the storage.
     if not transport:
         push_image_name = os.path.basename(singularity_image)
-        if is_local_fs:
-            # Do not copy SIF image if executor is local
-            return os.path.realpath(singularity_image)
-        else:
-            return _transfer_file_with_progress(
-                artifact_store,
-                singularity_image,
-                singularity_image_path(push_image_name),
-            )
+        return _transfer_file(
+            artifact_store, singularity_image, singularity_image_path(push_image_name)
+        )
     elif transport == "docker-daemon":
         cache_image_info = image_cache.get_cached_image(
             singularity_image, cache_dir=image_cache_dir
         )
         push_image_name = singularity.uri.filename(singularity_image, "sif")
-        if is_local_fs:
-            return os.path.realpath(cache_image_info.path)
-        else:
-            return _transfer_file_with_progress(
-                artifact_store,
-                cache_image_info.path,
-                singularity_image_path(push_image_name),
-            )
+        return _transfer_file(
+            artifact_store,
+            cache_image_info.path,
+            singularity_image_path(push_image_name),
+        )
     else:
         # For other transports, just use the image as is for now.
         # TODO(yl): Consider adding support for specifying pulling behavior.

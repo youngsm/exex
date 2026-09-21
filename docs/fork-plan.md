@@ -1,9 +1,11 @@
 # LXM3 fork: implementation delta
 
-Status: implementation in progress, 2026-09-16. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
+Status: minimal HPC launcher slice, 2026-09-20. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
 Upstream: [ethanluoyc/lxm3](https://github.com/ethanluoyc/lxm3), commit
 `30f55855e595ee7d8397daacb1475442265f37ef`. The
-[approved API contract](fork-api-proposal.md) defines the method-level changes.
+[API proposal](fork-api-proposal.md) defines the broader method-level changes.
+The [minimal HPC slice](minimal-hpc-slice.md) supersedes its release gate: everything
+beyond that boundary is deferred, not an implicit requirement for this patch.
 Existing exex and pimm code, catalogs and live workflows remain intact.
 
 ## Implementation progress
@@ -24,22 +26,19 @@ packaging. It is a subset of section 1, not completion of the entire roadmap.
 - No author database is introduced in this patch. The private packaging `store`
   parameter from the full proposal waits for the retained-source/catalog slice.
 
-Remote execution still uses upstream Fabric/Paramiko transport. System OpenSSH,
-the remaining script/exit-code fixes in section 1 and live site qualification are
-outstanding. Source freezing, reopening/lifecycle methods, artifacts and continuation
-remain unimplemented; the approved API document is not a claim that these exist.
+The second patch completes the narrow execution/staging work without adding public
+API. Slurm commands and transfers use system OpenSSH; GridEngine retains its
+upstream transport. Generated arguments, environment and mounts preserve literal
+values; GPU flags follow the resource request. Local failures propagate, contexts
+close on error, and local logs persist. Package files use content-derived names and
+are uploaded to temporary paths before final exposure.
 
-Validation uses the isolated Python 3.12 environment from the baseline, temporary
-staging directories, a real local CPU process and mocked scheduler/remote storage
-calls. No GPU, real SSH or scheduler jobs, container builds or image pulls are used.
-The regression suite covers two-site/two-project isolation, config/environment
-mutation, independent packaging queues, sync/async contexts, arrays/generators,
-target mismatches, nested image-cache routing and no retry after submission errors.
-
-Final check: `pytest -m 'not integration' tests lxm3/_vendor` with the baseline's
-timeout and isolated environment: **211 passed, 2 deselected** in 5.16 seconds.
-The 40 warnings concern upstream asyncio/async-generator deprecations. Ruff lint,
-format checks and `git diff --check` pass for all changed Python files.
+Regression tests execute generated scripts and exercise transfer/submission errors;
+live qualification covers local execution and S3DF/NERSC paths. The
+[scope and evidence record](minimal-hpc-slice.md) distinguishes scheduler acceptance
+from completed workload evidence. No container builds, image pulls or training runs
+are part of this slice. Source freezing, reopening/lifecycle APIs, retained outputs,
+continuation, new runtimes/backends and pimm migration remain deferred.
 
 ## Decision and scope
 

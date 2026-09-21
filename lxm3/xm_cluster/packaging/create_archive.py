@@ -2,6 +2,7 @@ import datetime
 import filecmp
 import glob
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -97,7 +98,7 @@ def create_python_archive(
             entrypoint = "\n".join(
                 [
                     "#!/bin/bash",
-                    "export PYTHONPATH=$(dirname $0):$PYTHONPATH",
+                    'export PYTHONPATH="$(dirname "$0")${PYTHONPATH:+:$PYTHONPATH}"',
                     _create_entrypoint_cmds(py_package),
                 ]
             )
@@ -148,7 +149,7 @@ def create_universal_archive(
             verbose=True,
         )
 
-    return " ".join(universal_package.entrypoint), os.path.basename(archive_name)
+    return shlex.join(universal_package.entrypoint), os.path.basename(archive_name)
 
 
 def create_pex_archive(

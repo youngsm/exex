@@ -2,13 +2,16 @@
 
 ## Fork status
 
-This is the `youngsm/lxm3` fork of `ethanluoyc/lxm3`. The
-[fork plan](docs/fork-plan.md) defines the additions for explicit multi-site
-execution, durable WorkUnits and retained research inputs/outputs while preserving
-LXM3's launch and packaging model. Explicit cluster selection and experiment-scoped
-packaging are implemented; durable WorkUnits and retained source/outputs are not yet.
-See the [approved API](docs/fork-api-proposal.md),
-[implementation progress](docs/fork-plan.md#implementation-progress) and
+This is the `youngsm/lxm3` fork of `ethanluoyc/lxm3`. The current release boundary is
+the [minimal HPC launcher](docs/minimal-hpc-slice.md): existing launch/packaging APIs,
+explicit sites, system OpenSSH for Slurm, reliable package staging and ordinary
+subprocess failures. Start with the runnable [HPC probe](examples/hpc/launch.py).
+Outputs are application-owned paths; local stdout/stderr go to the printed log path.
+
+The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
+are future work, not this slice's release requirements. Durable WorkUnits, retained
+source/output APIs, Shifter, continuation and Vertex are not implemented.
+See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers
 to the upstream distribution.
@@ -57,10 +60,12 @@ staging = "~/.cache/lxm3"
 [[clusters]]
 # Set a name for this cluster, e.g., "cs"
 name = "<TODO>"
-# Replace with the server you normally use for ssh into the cluster, e.g. "beaker.cs.ucl.ac.uk"
+# For Slurm, use your system OpenSSH alias. Omit server for on-site submission.
+# Authentication and jump hosts belong in ~/.ssh/config, not this TOML file.
 server = "<TODO>"
 # Fill in the username you use for this cluster.
 user = "<TODO>"
+# The following Paramiko options apply only to GridEngine, not Slurm.
 # Uncomment and update the line below if you would like to use a private key file ssh.
 # ssh_private_key = "~/.ssh/<private key name>"
 # Uncomment and update the line below if you would like to use a password for ssh.

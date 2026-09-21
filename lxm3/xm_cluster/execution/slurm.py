@@ -1,6 +1,7 @@
 import datetime
 import os
 import re
+import shlex
 from typing import List, Optional
 
 from lxm3 import xm
@@ -22,15 +23,21 @@ class SlurmJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Slurm]
 
     @classmethod
     def _is_gpu_requested(cls, executor: executors.Slurm) -> bool:
-        del executor
-        return True  # TODO
+        return any(
+            value and str(value) != "0"
+            for key, value in executor.resources.items()
+            if key.startswith("gpus")
+        ) or any(
+            item.split(":", 1)[0] == "gpu" and item.rsplit(":", 1)[-1] != "0"
+            for item in str(executor.resources.get("gres", "")).split(",")
+        )
 
     @classmethod
     def _create_job_script_prologue(cls, executable, executor: executors.Slurm) -> str:
         cmds = ['echo >&2 "INFO[$(basename "$0")]: Running on host $(hostname)"']
 
         for module in executor.modules:
-            cmds.append(f"module load {module}")
+            cmds.append(f"module load {shlex.quote(module)}")
         if cls._is_gpu_requested(executor):
             cmds.append(
                 'echo >&2 "INFO[$(basename "$0")]: CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"'
@@ -101,6 +108,7 @@ class SlurmClient:
         console.info(f"Launching {num_jobs} job on {self._settings.hostname}")
         job_id = self._cluster.launch(job_script_path)
         console.info(f"Successfully launched job {job_id}")
+        console.info(f"Logs: {job_log_dir}; script: {job_script_path}")
         self._artifact_store.put_text(str(job_id), f"jobs/{job_name}/job_id")
 
         handles = [SlurmHandle(job_id)]
@@ -112,7 +120,9 @@ def client(
     *, settings: config_lib.ClusterSettings, project: Optional[str]
 ) -> SlurmClient:
     artifact_store = job_script_builder.create_artifact_store(
-        settings=settings, project=project
+        settings=settings,
+        project=project,
+        use_openssh=True,
     )
     return SlurmClient(settings, artifact_store)
 
@@ -167,11 +177,15 @@ def header_from_executor(
 
     header.append(f"#SBATCH --job-name={job_name}")
     # TODO(yl): Only one task is supported for now.
-    header.append("#SBATCH --ntasks=1")
+    if (
+        "ntasks" not in executor.resources
+        and "ntasks-per-node" not in executor.resources
+    ):
+        header.append("#SBATCH --ntasks=1")
 
     for resource, value in executor.resources.items():
         if value:
-            header.append(f"#SBATCH --{resource}={value}")
+            header.append(f"#SBATCH --{resource}={shlex.quote(str(value))}")
 
     if executor.walltime is not None:
         duration = executor.walltime
@@ -183,7 +197,7 @@ def header_from_executor(
     else:
         stdout = os.path.join(log_directory, "%x-%j.out")
 
-    header.append(f"#SBATCH --output={stdout}")
+    header.append(f"#SBATCH --output={shlex.quote(stdout)}")
 
     if executor.exclusive:
         header.append("#SBATCH --exclusive")

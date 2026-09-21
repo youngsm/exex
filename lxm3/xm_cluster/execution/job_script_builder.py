@@ -1,5 +1,4 @@
 import abc
-import collections
 import os
 import shlex
 import textwrap
@@ -10,6 +9,8 @@ import fsspec
 from fsspec.implementations import sftp
 
 from lxm3 import xm
+from lxm3._vendor.xmanager.xm.utils import ARG_ESCAPER
+from lxm3.clusters.ssh import OpenSSHFileSystem
 from lxm3.xm_cluster import array_job
 from lxm3.xm_cluster import artifacts
 from lxm3.xm_cluster import config as config_lib
@@ -90,7 +91,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         else:
             export_env_file_cmds = f'touch "{install_dir}/.environment"'
         extract_pkg_cmds = _get_extract_command(executable.resource_uri, install_dir)
-        save_job_args_cmds = f"cat <<'EOF' > \"{install_dir}/{self.JOB_PARAM_NAME}\"\n{job_args_script}\nEOF"
+        save_job_args_cmds = f"printf '%s\\n' {shlex.quote(job_args_script)} > \"{install_dir}/{self.JOB_PARAM_NAME}\""
         return "\n".join(
             [
                 extract_pkg_cmds,
@@ -117,14 +118,14 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
                     executor.singularity_options or executors.SingularityOptions()
                 )
                 bind_mounts = [
-                    BindMount(src, dst) for src, dst in singularity_options.bind
+                    BindMount(src, dst) for src, dst in singularity_options.bind.items()
                 ]
                 runtime_options = [*singularity_options.extra_options]
             elif image_type == executables.ContainerImageType.DOCKER:
                 get_container_cmd = create_docker_command
                 docker_options = executor.docker_options or executors.DockerOptions()
                 bind_mounts = [
-                    BindMount(src, dst) for src, dst in docker_options.volumes
+                    BindMount(src, dst) for src, dst in docker_options.volumes.items()
                 ]
                 runtime_options = [*docker_options.extra_options]
             else:
@@ -132,9 +133,11 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
 
             bind_mounts.extend(
                 [
-                    BindMount(install_dir, self.CONTAINER_WORKDIR),
                     BindMount(
-                        os.path.join(install_dir, self.JOB_PARAM_NAME),
+                        xm.ShellSafeArg(f'"{install_dir}"'), self.CONTAINER_WORKDIR
+                    ),
+                    BindMount(
+                        xm.ShellSafeArg(f'"{install_dir}/{self.JOB_PARAM_NAME}"'),
                         self.CONTAINER_JOB_PARAM_PATH,
                         read_only=True,
                     ),
@@ -151,7 +154,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
                 options=runtime_options,
                 working_dir=self.CONTAINER_WORKDIR,
                 use_gpu=self._is_gpu_requested(executor),
-                env_file=os.path.join(install_dir, ".environment"),
+                env_file=xm.ShellSafeArg(f'"{install_dir}/.environment"'),
             )
 
         else:
@@ -211,7 +214,7 @@ cd "$LXM_WORKDIR"
 
 @attr.s(auto_attribs=True)
 class BindMount:
-    path: str
+    path: Union[str, xm.ShellSafeArg]
     mount_path: str
     read_only: bool = False
 
@@ -225,28 +228,28 @@ def create_singularity_command(
     bind_mounts: List[BindMount],
     use_gpu: bool,
     working_dir: str,
-    env_file: str,
+    env_file: Union[str, xm.ShellSafeArg],
 ) -> List[str]:
     cmd = ["singularity", "exec"]
 
     for mount in bind_mounts:
-        bm = f"{mount.path}:{mount.mount_path}"
+        bm = f"{ARG_ESCAPER(mount.path)}:{shlex.quote(mount.mount_path)}"
         if mount.read_only:
             bm += ":ro"
-        cmd.append(f'--bind="{bm}"')
+        cmd.append(f"--bind={bm}")
 
     for key, value in env_vars.items():
-        cmd.append(f'--env={key}="{value}"')
+        cmd.append(f"--env={shlex.quote(key + '=' + value)}")
 
-    cmd.extend(options)
+    cmd.extend(map(shlex.quote, options))
 
     if use_gpu:
         cmd.append("--nv")
 
-    cmd.append(f'--pwd="{working_dir}"')
-    cmd.append(f'--env-file="{env_file}"')
+    cmd.append(f"--pwd={shlex.quote(working_dir)}")
+    cmd.append(f"--env-file={ARG_ESCAPER(env_file)}")
 
-    cmd.extend([image, *args])
+    cmd.extend([shlex.quote(image), *args])
 
     return cmd
 
@@ -260,18 +263,18 @@ def create_docker_command(
     options: List[str],
     working_dir: str,
     use_gpu: bool,
-    env_file: str,
+    env_file: Union[str, xm.ShellSafeArg],
 ) -> List[str]:
     cmd = ["docker", "run", "--rm"]
 
     for mount in bind_mounts:
-        mount_spec = f"type=bind,source={mount.path},target={mount.mount_path}"
+        mount_spec = f"type=bind,source={ARG_ESCAPER(mount.path)},target={shlex.quote(mount.mount_path)}"
         if mount.read_only:
             mount_spec += ",readonly"
-        cmd.extend([f'--mount="{mount_spec}"'])
+        cmd.append(f"--mount={mount_spec}")
 
     for k, v in env_vars.items():
-        cmd.append(f'--env={k}="{v}"')
+        cmd.append(f"--env={shlex.quote(k + '=' + v)}")
 
     if use_gpu:
         cmd.extend(
@@ -281,25 +284,30 @@ def create_docker_command(
             ]
         )
 
-    cmd.extend(options)
-    cmd.append(f'--workdir="{working_dir}"')
-    cmd.append(f'--env-file="{env_file}"')
-    cmd.extend([image, *args])
+    cmd.extend(map(shlex.quote, options))
+    cmd.append(f"--workdir={shlex.quote(working_dir)}")
+    cmd.append(f"--env-file={ARG_ESCAPER(env_file)}")
+    cmd.extend([shlex.quote(image), *args])
 
     return cmd
 
 
 def _rewrite_array_job_command(array_script_path: str, cmd: str) -> List[str]:
-    return ["sh", "-c", shlex.quote(f'. {array_script_path}; {cmd} "$@"')]
+    return [
+        "sh",
+        "-e",
+        "-c",
+        shlex.quote(f'. {shlex.quote(array_script_path)}; {cmd} "$@"'),
+    ]
 
 
 def _get_extract_command(archive: str, directory: str) -> str:
     if archive.endswith(".zip"):
-        return f'unzip -q -d "{directory}" "{archive}"'
+        return f'unzip -q -d "{directory}" {shlex.quote(archive)}'
     elif archive.endswith(".tar"):
-        return f'tar -C "{directory}" -xf "{archive}"'
+        return f'tar -C "{directory}" -xf {shlex.quote(archive)}'
     elif archive.endswith((".tar.gz", ".tgz")):
-        return f'tar -C "{directory}" -xzf "{archive}"'
+        return f'tar -C "{directory}" -xzf {shlex.quote(archive)}'
     else:
         raise ValueError(archive)
 
@@ -339,55 +347,28 @@ def _create_array_job_args_script(
 def _create_env_vars(
     env_vars_list: List[Dict[str, str]], index_name: str, index_offset: int
 ) -> str:
-    """Create the env_vars list."""
-    lines = []
-    first_keys = set(env_vars_list[0].keys())
-    if not first_keys:
+    """Select a task's literal environment, without shell re-evaluation."""
+    if not any(env_vars_list):
         return ""
-
-    # Find out keys that are common to all environment variables
-    var_to_values = collections.defaultdict(list)
-    for env in env_vars_list:
-        for k, v in env.items():
-            var_to_values[k].append(v)
-
-    common_keys = []
-    for k, v in var_to_values.items():
-        if len(set(v)) == 1:
-            common_keys.append(k)
-    common_keys = sorted(common_keys)
-
-    for env_vars in env_vars_list:
-        if first_keys != set(env_vars.keys()):
-            raise ValueError("Expect all environment variables to have the same keys")
-
-    # Generate shared environment variables
-    for k in sorted(common_keys):
-        lines.append(f'export {k}="{env_vars_list[0][k]}"')
-
-    for key in first_keys:
-        if key in common_keys:
-            continue
-        for task_id, env_vars in enumerate(env_vars_list, start=index_offset):
-            lines.append(f'{key}_{task_id}="{env_vars[key]}"')
-        lines.append(f'{key}=$(eval echo \\$"{key}_${index_name}")')
-        lines.append(f"export {key}")
-    content = "\n".join(lines)
-    return content
+    lines = [f'case "${{{index_name}}}" in']
+    for task_id, env in enumerate(env_vars_list, start=index_offset):
+        lines.append(f"{task_id})")
+        lines.extend(
+            f"export {shlex.quote(key + '=' + value)}" for key, value in env.items()
+        )
+        lines.append(";;")
+    return "\n".join([*lines, "*) exit 2;;", "esac"])
 
 
 def _create_args(args_list: List[List[str]], index_name: str, index_offset: int) -> str:
     """Create the args list."""
     if not args_list:
         return ""
-    lines = []
+    lines = [f'case "${{{index_name}}}" in']
     for task_id, args in enumerate(args_list, start=index_offset):
-        args_str = " ".join([a for a in args])
-        lines.append(f'TASK_CMD_ARGS_{task_id}="{args_str}"')
-    lines.append(f'TASK_CMD_ARGS=$(eval echo \\$"TASK_CMD_ARGS_${index_name}")')
-    lines.append("eval set -- $TASK_CMD_ARGS")
-    content = "\n".join(lines)
-    return content
+        # SequentialArgs.to_list() has already escaped each argument.
+        lines.append(f"{task_id}) set -- {' '.join(args)};;")
+    return "\n".join([*lines, "*) exit 2;;", "esac"])
 
 
 def job_path(job_name: str):
@@ -417,18 +398,25 @@ def flatten_job(
 
 
 def create_artifact_store(
-    *, project: Optional[str], settings: config_lib.ClusterSettings
+    *,
+    project: Optional[str],
+    settings: config_lib.ClusterSettings,
+    use_openssh: bool = False,
 ):
     hostname = settings.hostname
     storage_root = settings.storage_root
     user = settings.user
-    ssh_config = settings.ssh_config
 
     if hostname is None:
         filesystem = fsspec.filesystem("file")
         storage_root = os.path.abspath(os.path.expanduser(storage_root))
+    elif use_openssh:
+        filesystem = OpenSSHFileSystem(hostname, username=user)
+        storage_root = filesystem.abspath(storage_root)
     else:
-        filesystem = sftp.SFTPFileSystem(host=hostname, username=user, **ssh_config)
+        filesystem = sftp.SFTPFileSystem(
+            host=hostname, username=user, **settings.ssh_config
+        )
         storage_root = filesystem.ftp.normalize(storage_root)
 
     return artifacts.ArtifactStore(

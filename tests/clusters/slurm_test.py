@@ -1,6 +1,6 @@
+import subprocess
 from unittest import mock
 
-import fabric
 from absl.testing import absltest
 from absl.testing import parameterized
 
@@ -10,7 +10,8 @@ from lxm3.clusters import slurm
 class SlurmTest(parameterized.TestCase):
     @parameterized.named_parameters(
         [
-            {"testcase_name": "job", "text": "Submitted batch job 6", "expected": 6},
+            {"testcase_name": "job", "text": "6\n", "expected": 6},
+            {"testcase_name": "federation", "text": "6;cluster\n", "expected": 6},
         ]
     )
     def test_parse_job_id(self, text, expected):
@@ -23,17 +24,17 @@ class SlurmTest(parameterized.TestCase):
 
 
 class ClusterTest(absltest.TestCase):
-    @mock.patch("fabric.Connection")
-    def test_cluster(self, mock_connection):
-        instance = mock_connection.return_value
-        instance.run.return_value = fabric.Result(
-            connection=instance,
-            stdout="Submitted batch job 6",
-        )
+    @mock.patch.object(slurm.ssh, "run")
+    def test_cluster(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, stdout="6\n")
         cluster = slurm.SlurmCluster(hostname="host", username="user")
         job_id = cluster.launch("job.sbatch")
         self.assertEqual(job_id, "6")
-        cluster.close()
+        run.assert_called_once_with(
+            ["sbatch", "--parsable", "--", "job.sbatch"],
+            hostname="host",
+            username="user",
+        )
 
 
 if __name__ == "__main__":
