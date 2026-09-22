@@ -1,9 +1,9 @@
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import xm
-from lxm3.contrib import ucl
-from lxm3.xm_cluster import requirements as cluster_requirements
+from exex import xm
+from exex.contrib import ucl
+from exex.xm_cluster import requirements as cluster_requirements
 
 
 class UCLClusterTest(parameterized.TestCase):

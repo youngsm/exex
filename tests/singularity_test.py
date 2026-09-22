@@ -2,7 +2,7 @@
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import singularity
+from exex import singularity
 
 
 class URITest(parameterized.TestCase):

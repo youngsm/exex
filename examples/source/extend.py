@@ -5,8 +5,8 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
+from exex import xm
+from exex import xm_cluster as xc
 
 EXPERIMENT = flags.DEFINE_integer(
     "experiment_id", None, "Existing experiment ID", required=True

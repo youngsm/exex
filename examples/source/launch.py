@@ -7,8 +7,8 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
+from exex import xm
+from exex import xm_cluster as xc
 
 TARGET = flags.DEFINE_string("target", "local", "local or a TOML cluster name")
 OUTPUT = flags.DEFINE_string(
@@ -41,7 +41,7 @@ def main(_):
     with xc.create_experiment(
         "frozen-source-probe", project="qualification"
     ) as experiment:
-        with tempfile.TemporaryDirectory(prefix="lxm3-disposable-source-") as checkout:
+        with tempfile.TemporaryDirectory(prefix="exex-disposable-source-") as checkout:
             shutil.copyfile(
                 Path(__file__).parents[1] / "hpc/workload.py",
                 Path(checkout) / "workload.py",

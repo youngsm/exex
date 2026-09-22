@@ -6,7 +6,7 @@ new step object, worker manager, distributed bootstrap, or framework dependency.
 
 ## Execution contract
 
-1. LXM3 submits one two-node batch allocation, with a two-minute limit.
+1. Exex submits one two-node batch allocation, with a two-minute limit.
 2. It unpacks once beneath `workdir_root`, which must be shared across the nodes.
 3. The packaged `driver.sh` runs once. It creates a new output directory and a
    token in the unpacked workspace, then executes:
@@ -19,11 +19,11 @@ new step object, worker manager, distributed bootstrap, or framework dependency.
 4. Each worker records its native Slurm rank, host, working directory, source
    checksum, driver token, and an environment value containing quotes/newlines.
    Reading the token tests shared access to a file created *after* unpacking.
-5. `srun` waits for its workers; its exit code reaches the batch script. LXM3
+5. `srun` waits for its workers; its exit code reaches the batch script. Exex
    cleans up the unpacked child directory, leaving the output directory intact.
 
 Allocation and task launch are separate: requesting two nodes does not duplicate
-the driver. Site settings remain in LXM3's TOML configuration and Slurm resources.
+the driver. Site settings remain in Exex's TOML configuration and Slurm resources.
 This example fixes two nodes, one task per node, and one CPU per task; other
 resource flags select the account, queue, node type, and optional GPUs.
 
@@ -31,14 +31,14 @@ resource flags select the account, queue, node type, and optional GPUs.
 
 Use the fork's authoring environment and an existing `nersc` SSH/site definition.
 The execution host needs only Bash, Slurm commands, unzip, and Python 3.6+.
-It does not need LXM3, a training framework, or a copied virtual environment.
+It does not need Exex, a training framework, or a copied virtual environment.
 
 ```sh
-export LXM_CONFIG=/sdf/group/neutrino/youngsam/representations/lxm3-qualification.jmeYsG/lxm.toml
-lxm3 launch examples/slurm_step/launch.py -- \
+export EXEX_CONFIG=/sdf/group/neutrino/youngsam/representations/exex-qualification.jmeYsG/lxm.toml
+exex launch examples/slurm_step/launch.py -- \
   --cluster=nersc --python=/usr/bin/python3 \
-  --output_dir=/pscratch/sd/y/youngsam/lxm3-qualification-jmeYsG/slurm-step-success-002 \
-  --workdir_root=/pscratch/sd/y/youngsam/lxm3-qualification-jmeYsG/slurm-step-work \
+  --output_dir=/pscratch/sd/y/youngsam/exex-qualification-jmeYsG/slurm-step-success-002 \
+  --workdir_root=/pscratch/sd/y/youngsam/exex-qualification-jmeYsG/slurm-step-work \
   --resource=account=m5238_g --resource=qos=debug \
   --resource=constraint=gpu --resource=gpus-per-node=1
 ```
@@ -87,7 +87,7 @@ shared Perlmutter scratch. No library implementation changes were needed.
   Neither live job restarted or requeued; both allocations have ended.
 
 Evidence root on NERSC:
-`/pscratch/sd/y/youngsam/lxm3-qualification-jmeYsG`. Success output is in
+`/pscratch/sd/y/youngsam/exex-qualification-jmeYsG`. Success output is in
 `slurm-step-success-001/`; scripts and logs are beneath
 `staging/projects/qualification/{jobs,logs}/slurm_step_probe_<experiment>_1/`.
 The negative-test output is in `slurm-step-failure-002/`.

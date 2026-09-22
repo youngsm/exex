@@ -1,9 +1,9 @@
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import xm
-from lxm3 import xm_cluster
-from lxm3._vendor.xmanager import xm_mock
+from exex import xm
+from exex import xm_cluster
+from exex._vendor.xmanager import xm_mock
 
 
 class ArrayJobTest(parameterized.TestCase):

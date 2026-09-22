@@ -5,8 +5,8 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
+from exex import xm
+from exex import xm_cluster as xc
 
 TARGET = flags.DEFINE_string("target", None, "Configured Slurm cluster", required=True)
 MODE = flags.DEFINE_enum("mode", "sbatch", ["sbatch", "salloc"], "Allocation mechanism")

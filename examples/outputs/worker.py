@@ -1,4 +1,4 @@
-"""Standard-library workload: no LXM3 or ML framework installation required."""
+"""Standard-library workload: no Exex or ML framework installation required."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument("--missing", action="store_true")
 args = parser.parse_args()
-output = Path(os.environ["LXM_OUTPUT_DIR"])
+output = Path(os.environ["EXEX_OUTPUT_DIR"])
 metrics = {
     "hostname": socket.gethostname(),
     "working_directory": str(Path.cwd()),

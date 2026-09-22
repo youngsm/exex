@@ -5,7 +5,7 @@ import os
 import socket
 from pathlib import Path
 
-inputs = Path(os.environ["LXM_INPUT_DIR"])
+inputs = Path(os.environ["EXEX_INPUT_DIR"])
 weights = inputs / "checkpoint/weights.txt"
 original = weights.read_text()
 metrics = json.loads((inputs / "metrics").read_text())
@@ -20,5 +20,5 @@ result = {
     "working_directory": str(Path.cwd()),
     "input_directory": str(inputs),
 }
-(Path(os.environ["LXM_OUTPUT_DIR"]) / "result.json").write_text(json.dumps(result))
+(Path(os.environ["EXEX_OUTPUT_DIR"]) / "result.json").write_text(json.dumps(result))
 print(json.dumps(result), flush=True)

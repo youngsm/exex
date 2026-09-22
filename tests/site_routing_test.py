@@ -7,15 +7,15 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3._vendor.xmanager.xm.async_packager import PackageHasNotBeenCalledError
-from lxm3.clusters import gridengine as native_gridengine
-from lxm3.clusters import slurm as native_slurm
-from lxm3.singularity import image_cache
-from lxm3.xm_cluster import config as config_lib
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster.execution import job_script_builder
+from exex import xm
+from exex import xm_cluster as xc
+from exex._vendor.xmanager.xm.async_packager import PackageHasNotBeenCalledError
+from exex.clusters import gridengine as native_gridengine
+from exex.clusters import slurm as native_slurm
+from exex.singularity import image_cache
+from exex.xm_cluster import config as config_lib
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster.execution import job_script_builder
 
 
 @pytest.fixture(autouse=True)
@@ -29,8 +29,8 @@ def isolated_event_loop_policy():
 
 @pytest.fixture
 def config(tmp_path, monkeypatch):
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
     return xc.Config(
         {
@@ -57,10 +57,10 @@ async def resolved(awaitable):
 
 
 def test_explicit_cluster_bypasses_environment(config, monkeypatch):
-    monkeypatch.setenv("LXM_CLUSTER", "nersc")
+    monkeypatch.setenv("EXEX_CLUSTER", "nersc")
     assert config.cluster_settings().storage_root.endswith("nersc")
     assert config.cluster_settings("s3df").storage_root.endswith("s3df")
-    assert os.environ["LXM_CLUSTER"] == "nersc"
+    assert os.environ["EXEX_CLUSTER"] == "nersc"
     with pytest.raises(ValueError, match="Unknown cluster: 'missing'"):
         config.cluster_settings("missing")
 
@@ -75,7 +75,7 @@ def test_spec_carries_selected_site(executor_type):
 
 
 def test_explicit_project_does_not_mutate_config(config, monkeypatch):
-    monkeypatch.setenv("LXM_PROJECT", "ambient")
+    monkeypatch.setenv("EXEX_PROJECT", "ambient")
     one = xc.create_experiment("one", project="alpha", config=config)
     two = xc.create_experiment("two", project="beta", config=config)
     ambient = xc.create_experiment("ambient", config=config)
@@ -91,14 +91,14 @@ def test_explicit_project_does_not_mutate_config(config, monkeypatch):
 def test_config_snapshot_pins_environment_paths_and_nested_data(
     config, source, monkeypatch, tmp_path
 ):
-    monkeypatch.setenv("LXM_CLUSTER", "s3df")
-    monkeypatch.setenv("LXM_PROJECT", "original")
+    monkeypatch.setenv("EXEX_CLUSTER", "s3df")
+    monkeypatch.setenv("EXEX_PROJECT", "original")
     experiment = xc.create_experiment("snapshot", config=config)
     pending = experiment.package_async(xm.Packageable(source, xc.Slurm().Spec()))
 
     config._data["clusters"][0]["storage"]["staging"] = str(tmp_path / "changed")
-    monkeypatch.setenv("LXM_CLUSTER", "nersc")
-    monkeypatch.setenv("LXM_PROJECT", "changed")
+    monkeypatch.setenv("EXEX_CLUSTER", "nersc")
+    monkeypatch.setenv("EXEX_PROJECT", "changed")
     with mock.patch.object(
         config_lib, "default", side_effect=AssertionError("global lookup")
     ):

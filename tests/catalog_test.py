@@ -9,10 +9,10 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.xm_cluster import catalog
-from lxm3.xm_cluster import experiment as experiment_lib
+from exex import xm
+from exex import xm_cluster as xc
+from exex.xm_cluster import catalog
+from exex.xm_cluster import experiment as experiment_lib
 
 
 @pytest.fixture
@@ -46,8 +46,8 @@ def legacy(tmp_path, monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     config = xc.Config({"local": {"storage": {"staging": str(tmp_path)}}})
     yield store, config
     asyncio.set_event_loop_policy(previous)

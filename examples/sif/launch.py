@@ -5,8 +5,8 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
+from exex import xm
+from exex import xm_cluster as xc
 
 CLUSTER = flags.DEFINE_string("cluster", None, "TOML cluster name", required=True)
 IMAGE = flags.DEFINE_string("image", None, "Author-local SIF", required=True)

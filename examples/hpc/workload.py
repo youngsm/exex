@@ -1,4 +1,4 @@
-"""Standard-library probe; the application, not LXM3, owns its output format."""
+"""Standard-library probe; the application, not Exex, owns its output format."""
 
 import argparse
 import json

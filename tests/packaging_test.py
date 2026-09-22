@@ -8,11 +8,11 @@ import fsspec
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import xm
-from lxm3 import xm_cluster
-from lxm3.singularity import image_cache
-from lxm3.xm_cluster import artifacts
-from lxm3.xm_cluster.packaging import router
+from exex import xm
+from exex import xm_cluster
+from exex.singularity import image_cache
+from exex.xm_cluster import artifacts
+from exex.xm_cluster.packaging import router
 
 _HERE = os.path.abspath(os.path.dirname(__file__))
 

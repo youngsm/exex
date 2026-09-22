@@ -11,13 +11,13 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import execution
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import ssh
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster import inspection
-from lxm3.xm_cluster.execution.slurm import SlurmJobScriptBuilder
+from exex import execution
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import ssh
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster import inspection
+from exex.xm_cluster.execution.slurm import SlurmJobScriptBuilder
 
 
 @pytest.fixture(autouse=True)
@@ -25,9 +25,9 @@ def isolated_loop_policy(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
-    monkeypatch.delenv("LXM_LINKS_FILE", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_LINKS_FILE", raising=False)
     yield
     asyncio.set_event_loop_policy(previous)
 
@@ -36,7 +36,7 @@ def test_atomic_named_links_and_noop_outside_execution(tmp_path, monkeypatch):
     execution.link("unused", "https://example.org/outside")
     assert list(tmp_path.iterdir()) == []
     path = tmp_path / "links.json"
-    monkeypatch.setenv("LXM_LINKS_FILE", str(path))
+    monkeypatch.setenv("EXEX_LINKS_FILE", str(path))
     execution.link("wandb", "https://example.org/first")
     execution.link("report $ ' /", "https://example.org/report")
     execution.link("wandb", "https://example.org/replacement")
@@ -64,7 +64,7 @@ def test_reopen_links_after_success_or_failure_with_task_isolation(
     root = tmp_path / "work"
     experiment = xc.create_experiment("links", config=config)
     code = (
-        "from lxm3 import execution; import os,sys; "
+        "from exex import execution; import os,sys; "
         "execution.link('report', 'https://example.org/' + os.environ['VALUE']); "
         f"sys.exit({exit_code})"
     )
@@ -88,7 +88,7 @@ def test_reopen_links_after_success_or_failure_with_task_isolation(
                 else xm.Job(
                     executable,
                     executor,
-                    env_vars={"VALUE": "one", "LXM_LINKS_FILE": "/wrong"},
+                    env_vars={"VALUE": "one", "EXEX_LINKS_FILE": "/wrong"},
                 )
             )
             experiment.add(job)
@@ -140,7 +140,7 @@ def test_link_is_readable_in_another_process_before_payload_finishes(tmp_path):
     config = xc.Config({"local": {"storage": {"staging": str(tmp_path / "store")}}})
     release = tmp_path / "release"
     code = f"""
-from lxm3 import execution
+from exex import execution
 from pathlib import Path
 import time
 execution.link("report", "https://example.org/live")
@@ -166,7 +166,7 @@ while not Path({str(release)!r}).exists():
                 assert time.monotonic() < deadline, "payload did not report its link"
                 time.sleep(0.02)
             reader = (
-                "from lxm3 import xm_cluster as xc; "
+                "from exex import xm_cluster as xc; "
                 f"config = xc.Config({config._data!r}); "
                 f"unit = xc.get_experiment({experiment.experiment_id}, config=config).work_units()[1]; "
                 "assert unit.get_links() == {'report': 'https://example.org/live'}"
@@ -178,8 +178,8 @@ while not Path({str(release)!r}).exists():
 
 @pytest.mark.parametrize("kind", ["singularity", "docker", "shifter"])
 def test_container_script_exposes_retained_link_directory(kind, tmp_path):
-    from lxm3.xm_cluster.executables import ContainerImage
-    from lxm3.xm_cluster.executables import ContainerImageType
+    from exex.xm_cluster.executables import ContainerImage
+    from exex.xm_cluster.executables import ContainerImageType
 
     bundle = xc.AppBundle(
         "test",
@@ -190,10 +190,10 @@ def test_container_script_exposes_retained_link_directory(kind, tmp_path):
     script = SlurmJobScriptBuilder().build(
         xm.Job(bundle, xc.Slurm()), "test", str(tmp_path / "logs")
     )
-    assert 'mkdir -p -- "$LXM_LINK_DIR"' in script
+    assert 'mkdir -p -- "$EXEX_LINK_DIR"' in script
     if kind == "shifter":
         assert "--volume=" not in script
         assert str(tmp_path / "logs" / "links") in script
     else:
-        assert "/run/lxm3/links" in script
+        assert "/run/exex/links" in script
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)

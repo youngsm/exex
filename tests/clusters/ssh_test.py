@@ -6,10 +6,10 @@ from unittest import mock
 
 import pytest
 
-from lxm3.clusters import slurm
-from lxm3.clusters import ssh
-from lxm3.xm_cluster import config
-from lxm3.xm_cluster.execution import job_script_builder
+from exex.clusters import slurm
+from exex.clusters import ssh
+from exex.xm_cluster import config
+from exex.xm_cluster.execution import job_script_builder
 
 
 def test_command_uses_system_ssh_without_retries():

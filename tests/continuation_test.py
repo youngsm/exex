@@ -14,24 +14,24 @@ from unittest import mock
 
 import pytest
 
-import lxm3
-from lxm3 import execution
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import slurm
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster.executables import ContainerImage
-from lxm3.xm_cluster.executables import ContainerImageType
-from lxm3.xm_cluster.execution import continuation as driver
-from lxm3.xm_cluster.execution.slurm import AttachedHandle
-from lxm3.xm_cluster.execution.slurm import SlurmJobScriptBuilder
+import exex
+from exex import execution
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import slurm
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster.executables import ContainerImage
+from exex.xm_cluster.executables import ContainerImageType
+from exex.xm_cluster.execution import continuation as driver
+from exex.xm_cluster.execution.slurm import AttachedHandle
+from exex.xm_cluster.execution.slurm import SlurmJobScriptBuilder
 
 WORKER = """
 import os, time
 from pathlib import Path
-from lxm3 import execution
-root = Path(os.environ["LXM_OUTPUT_DIR"])
-resume = Path(os.environ.get("LXM_INPUT_DIR", "/absent")) / "checkpoint"
+from exex import execution
+root = Path(os.environ["EXEX_OUTPUT_DIR"])
+resume = Path(os.environ.get("EXEX_INPUT_DIR", "/absent")) / "checkpoint"
 step = int(resume.read_text()) + 1 if resume.exists() else 1
 print("step", step, flush=True)
 execution.link("report", "https://example.org/step/" + str(step))
@@ -91,9 +91,9 @@ def site(tmp_path, monkeypatch):
     old = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    for key in ("LXM_PROJECT", "LXM_CLUSTER", "LXM_PAUSE_REQUEST", "LXM_PAUSE_READY"):
+    for key in ("EXEX_PROJECT", "EXEX_CLUSTER", "EXEX_PAUSE_REQUEST", "EXEX_PAUSE_READY"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("PYTHONPATH", str(Path(lxm3.__file__).parent.parent))
+    monkeypatch.setenv("PYTHONPATH", str(Path(exex.__file__).parent.parent))
     binary = tmp_path / "bin"
     binary.mkdir()
     for name in ("salloc", "srun", "scontrol", "sacct"):
@@ -162,11 +162,11 @@ def run_batch(unit):
 
 
 def test_worker_helpers_are_optional_and_do_not_exit(tmp_path, monkeypatch):
-    monkeypatch.delenv("LXM_PAUSE_REQUEST", raising=False)
+    monkeypatch.delenv("EXEX_PAUSE_REQUEST", raising=False)
     assert not execution.pause_requested()
     request, ready = tmp_path / "request", tmp_path / "ready"
-    monkeypatch.setenv("LXM_PAUSE_REQUEST", str(request))
-    monkeypatch.setenv("LXM_PAUSE_READY", str(ready))
+    monkeypatch.setenv("EXEX_PAUSE_REQUEST", str(request))
+    monkeypatch.setenv("EXEX_PAUSE_READY", str(ready))
     request.touch()
     assert execution.pause_requested()
     assert execution.mark_paused() is None
@@ -398,12 +398,12 @@ def test_container_controls_use_visible_attempt_paths(site, tmp_path, kind):
         },
     )
     subprocess.run(["bash", "-n"], input=script, text=True, check=True)
-    assert '"$LXM_ATTEMPT_DIR/links/0"' in script
+    assert '"$EXEX_ATTEMPT_DIR/links/0"' in script
     if kind == "singularity":
-        assert "LXM_PAUSE_REQUEST=/run/lxm3/links/pause-request" in script
+        assert "EXEX_PAUSE_REQUEST=/run/exex/links/pause-request" in script
     else:
-        assert 'LXM_PAUSE_REQUEST="$LXM_ATTEMPT_DIR/links/0"/pause-request' in script
-    assert "LXM_PAUSE_READY=" in script
+        assert 'EXEX_PAUSE_REQUEST="$EXEX_ATTEMPT_DIR/links/0"/pause-request' in script
+    assert "EXEX_PAUSE_READY=" in script
 
 
 @pytest.mark.parametrize("kind", ["local", "array", "walltime"])
@@ -437,7 +437,7 @@ def test_unsupported_execution_is_rejected_before_submission(site, tmp_path, kin
 
 def test_attached_transport_failure_propagates_once_without_retry():
     error = subprocess.CalledProcessError(255, "ssh")
-    with mock.patch("lxm3.clusters.ssh.run", side_effect=error) as run:
+    with mock.patch("exex.clusters.ssh.run", side_effect=error) as run:
         handle = AttachedHandle(
             ["bash", "/saved/job.sh"], hostname="nersc", username="user"
         )

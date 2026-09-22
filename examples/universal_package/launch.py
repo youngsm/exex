@@ -1,7 +1,7 @@
 from absl import app
 
-from lxm3 import xm
-from lxm3 import xm_cluster
+from exex import xm
+from exex import xm_cluster
 
 
 def main(_):

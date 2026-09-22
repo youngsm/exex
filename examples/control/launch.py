@@ -5,8 +5,8 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
+from exex import xm
+from exex import xm_cluster as xc
 
 TARGET = flags.DEFINE_string("target", "local", "local or a TOML cluster name")
 DURATION = flags.DEFINE_integer("duration", 30, "Probe sleep in seconds", lower_bound=0)

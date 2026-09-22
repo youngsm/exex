@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.xm_cluster.execution.slurm import SlurmJobScriptBuilder
+from exex import xm
+from exex import xm_cluster as xc
+from exex.xm_cluster.execution.slurm import SlurmJobScriptBuilder
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples/slurm_step"
 MESSAGE = "literal $value ' with spaces\nand a newline"

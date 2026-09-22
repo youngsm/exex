@@ -6,7 +6,7 @@ The image supplies Python/PyTorch/CUDA dependencies; the source archive supplies
 `probe.py`. Packaging does not build or pull an image.
 
 The optional workload uses PyTorch to perform an actual CUDA matrix product.
-Neither LXM3 nor the launcher imports PyTorch. Other workloads can use JAX,
+Neither Exex nor the launcher imports PyTorch. Other workloads can use JAX,
 TensorFlow, or no ML framework.
 
 ## Run
@@ -14,13 +14,13 @@ TensorFlow, or no ML framework.
 Use a cluster configuration whose staging directory and input/output paths are
 shared by the authoring host and execution host. This example creates the output
 directory on the authoring host; it is not a remote-directory provisioning API.
-The SIF must already exist and be readable on the authoring host. LXM3 stages it
+The SIF must already exist and be readable on the authoring host. Exex stages it
 under its content hash, separately from the source archive.
 
 Prepare an input directory containing `value.txt` with the number `3`, then:
 
 ```bash
-LXM_CONFIG=/path/to/lxm.toml lxm3 launch examples/sif/launch.py -- \
+EXEX_CONFIG=/path/to/lxm.toml exex launch examples/sif/launch.py -- \
   --cluster=s3df \
   --image=/path/to/existing-pytorch-cuda.sif \
   --input_dir=/shared/probe/input \
@@ -36,8 +36,8 @@ walltime. Replace site-specific resource flags for another cluster. Choose a new
 output directory each time: existing output is deliberately not overwritten.
 
 The input and output directories are bound at `/probe-input` and `/probe-output`;
-packaged source runs at `/run/lxm3/workdir`. `--cleanenv` prevents arbitrary host
-environment inheritance. LXM3 forwards Slurm variables and the allocated
+packaged source runs at `/run/exex/workdir`. `--cleanenv` prevents arbitrary host
+environment inheritance. Exex forwards Slurm variables and the allocated
 `CUDA_VISIBLE_DEVICES` mask explicitly, then applies the job's literal arguments
 and environment inside the container. GPU allocation adds the runtime's `--nv`.
 
@@ -53,7 +53,7 @@ The source archive changes; the staged SIF is reused.
 ## Qualification
 
 The initial regression exposed one concrete library defect: `--cleanenv` removed
-Slurm's GPU mask because LXM3 forwarded only `SLURM_*`. The fix adds
+Slurm's GPU mask because Exex forwarded only `SLURM_*`. The fix adds
 `CUDA_VISIBLE_DEVICES` to the existing environment-file filter. Tests failed
 before that one-line fix and pass after it. The probe checks the mask and visible
 device count before computing; it does not rely on device cgroups for correctness.
@@ -74,19 +74,19 @@ The mounted input was `3`, the CUDA product's checksum was `12288`, and literal
 quotes, dollar signs, spaces, and newlines survived in arguments/environment.
 
 Evidence root:
-`/sdf/group/neutrino/youngsam/representations/lxm3-qualification.jmeYsG`.
+`/sdf/group/neutrino/youngsam/representations/exex-qualification.jmeYsG`.
 The live invocations used the command above with these flag values:
 
 | Flag | Value |
 | --- | --- |
-| `LXM_CONFIG` | `<evidence root>/lxm.toml` |
+| `EXEX_CONFIG` | `<evidence root>/lxm.toml` |
 | `--image` | `/sdf/group/neutrino/junjie/img-CIDeR-ML/larcv2_ub20.04-cuda11.6-pytorch1.13-larndsim-2023-11-07.sif` |
 | `--input_dir` | `<evidence root>/sif-input` |
 | `--workdir_root` | `<evidence root>/sif-work` |
 | `--output_dir` | `<evidence root>/sif-success-001 output`, `sif-failure-001`, or `sif-source-edit-001` |
 
 The second invocation added `--fail`; the third added
-`--source_dir=/lscratch/youngsam/tmp/lxm3-sif-source.wq79ZC`, containing only the
+`--source_dir=/lscratch/youngsam/tmp/exex-sif-source.wq79ZC`, containing only the
 copied build script and probe with `REVISION = "source-edit"`. Each output contains
 `result.json`. Native scripts/logs are under
 `s3df/projects/qualification/{jobs,logs}/sif_probe_<experiment>_1`, with experiments

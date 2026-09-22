@@ -5,7 +5,7 @@ import fsspec
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3.xm_cluster import artifacts
+from exex.xm_cluster import artifacts
 
 
 class LocalArtifactsTest(parameterized.TestCase):

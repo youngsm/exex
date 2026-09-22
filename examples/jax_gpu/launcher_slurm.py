@@ -2,8 +2,8 @@
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster
+from exex import xm
+from exex import xm_cluster
 
 _SINGULARITY_CONTAINER = flags.DEFINE_string(
     "container", "jax-cuda.sif", "Path to singularity container"

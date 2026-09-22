@@ -13,19 +13,19 @@ import pytest
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import xm
-from lxm3 import xm_cluster
-from lxm3.clusters import gridengine as gridengine_cluster
-from lxm3.clusters import slurm as slurm_cluster
-from lxm3.xm_cluster import JobRequirements
-from lxm3.xm_cluster import artifacts
-from lxm3.xm_cluster import config
-from lxm3.xm_cluster import executables
-from lxm3.xm_cluster import executors
-from lxm3.xm_cluster.execution import gridengine
-from lxm3.xm_cluster.execution import job_script_builder as job_script
-from lxm3.xm_cluster.execution import local
-from lxm3.xm_cluster.execution import slurm
+from exex import xm
+from exex import xm_cluster
+from exex.clusters import gridengine as gridengine_cluster
+from exex.clusters import slurm as slurm_cluster
+from exex.xm_cluster import JobRequirements
+from exex.xm_cluster import artifacts
+from exex.xm_cluster import config
+from exex.xm_cluster import executables
+from exex.xm_cluster import executors
+from exex.xm_cluster.execution import gridengine
+from exex.xm_cluster.execution import job_script_builder as job_script
+from exex.xm_cluster.execution import local
+from exex.xm_cluster.execution import slurm
 from tests import utils
 
 
@@ -46,9 +46,9 @@ class JobScriptBuilderTest(parameterized.TestCase):
         probe = 'import json,os,sys; print(json.dumps([sys.argv[1:], {k: os.getenv(k) for k in ("FOO", "BAR")}]))'
         script = "\n".join(
             [
-                f"LXM_TASK_ID={task}",
-                job_script._create_env_vars(envs, "LXM_TASK_ID", 0),
-                job_script._create_args(args or [[]] * len(envs), "LXM_TASK_ID", 0),
+                f"EXEX_TASK_ID={task}",
+                job_script._create_env_vars(envs, "EXEX_TASK_ID", 0),
+                job_script._create_args(args or [[]] * len(envs), "EXEX_TASK_ID", 0),
                 f'{shlex.quote(sys.executable)} -c {shlex.quote(probe)} "$@"',
             ]
         )
@@ -62,7 +62,7 @@ class JobScriptBuilderTest(parameterized.TestCase):
         self.assertEqual(self._evaluate(envs, task=1)[1]["FOO"], "BAR2")
 
     def test_empty_env_vars(self):
-        self.assertEqual(job_script._create_env_vars([{}], "LXM_TASK_ID", 0), "")
+        self.assertEqual(job_script._create_env_vars([{}], "EXEX_TASK_ID", 0), "")
 
     def test_common_values(self):
         envs = [{"FOO": "BAR", "BAR": "1"}, {"FOO": "BAR", "BAR": "2"}]
@@ -77,7 +77,7 @@ class JobScriptBuilderTest(parameterized.TestCase):
         self.assertEqual(self._evaluate([{}, {}], args, task=1)[0], args[1])
 
     def test_empty_args(self):
-        self.assertEqual(job_script._create_args([], "LXM_TASK_ID", 0), "")
+        self.assertEqual(job_script._create_args([], "EXEX_TASK_ID", 0), "")
         self.assertEqual(self._evaluate([{}])[0], [])
 
     def test_ml_collections_quoting(self):

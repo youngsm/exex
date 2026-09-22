@@ -12,14 +12,14 @@ from pathlib import Path
 import fsspec
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.xm_cluster import artifacts
-from lxm3.xm_cluster import executables
-from lxm3.xm_cluster.execution import gridengine
-from lxm3.xm_cluster.execution import local
-from lxm3.xm_cluster.execution import slurm
-from lxm3.xm_cluster.packaging import router
+from exex import xm
+from exex import xm_cluster as xc
+from exex.xm_cluster import artifacts
+from exex.xm_cluster import executables
+from exex.xm_cluster.execution import gridengine
+from exex.xm_cluster.execution import local
+from exex.xm_cluster.execution import slurm
+from exex.xm_cluster.packaging import router
 
 
 @pytest.fixture(autouse=True)
@@ -216,7 +216,7 @@ def test_container_mounts_and_image_are_literal(
     )
     assert expected in argv
     assert image in argv
-    assert not any("$LXM_WORKDIR" in arg for arg in argv)
+    assert not any("$EXEX_WORKDIR" in arg for arg in argv)
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])

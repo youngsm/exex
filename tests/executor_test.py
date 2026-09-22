@@ -5,14 +5,14 @@ import pytest
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.xm_cluster import config
-from lxm3.xm_cluster import executables
-from lxm3.xm_cluster import executors
-from lxm3.xm_cluster.execution import gridengine
-from lxm3.xm_cluster.execution import local
-from lxm3.xm_cluster.execution import slurm
+from exex import xm
+from exex import xm_cluster as xc
+from exex.xm_cluster import config
+from exex.xm_cluster import executables
+from exex.xm_cluster import executors
+from exex.xm_cluster.execution import gridengine
+from exex.xm_cluster.execution import local
+from exex.xm_cluster.execution import slurm
 
 
 class ExecutorTest(parameterized.TestCase):

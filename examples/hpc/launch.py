@@ -1,12 +1,12 @@
-"""A bounded launch probe using only the existing LXM3 public API."""
+"""A bounded launch probe using only the existing Exex public API."""
 
 from pathlib import Path
 
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
+from exex import xm
+from exex import xm_cluster as xc
 
 TARGET = flags.DEFINE_string(
     "target", "local", "local or an explicit TOML cluster name"

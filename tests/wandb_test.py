@@ -11,9 +11,9 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.contrib import wandb as integration
+from exex import xm
+from exex import xm_cluster as xc
+from exex.contrib import wandb as integration
 
 STATE = dict(
     entity="team", project="science", group="logical-run", run_id="parent", next_step=8
@@ -25,7 +25,7 @@ def isolated_environment(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     for key in os.environ:
-        if key.startswith("WANDB_") or key == "LXM_LINKS_FILE":
+        if key.startswith("WANDB_") or key == "EXEX_LINKS_FILE":
             monkeypatch.delenv(key)
     yield
     asyncio.set_event_loop_policy(previous)
@@ -99,7 +99,7 @@ def test_history_translation_uses_actual_saved_state(
     backend, history, monkeypatch, tmp_path
 ):
     path = tmp_path / "links.json"
-    monkeypatch.setenv("LXM_LINKS_FILE", str(path))
+    monkeypatch.setenv("EXEX_LINKS_FILE", str(path))
     run = integration.init(state=STATE, history=history, config={"lr": 0.1})
     assert run is backend.init.return_value
     kwargs = backend.init.call_args.kwargs
@@ -116,9 +116,9 @@ def test_history_translation_uses_actual_saved_state(
         assert kwargs["id"] == "child" and kwargs["resume"] == "never"
         assert "fork_from" not in kwargs
     assert "resume_from" not in kwargs
-    origin = "lxm3/resumed_from" if history == "append" else "lxm3/parent"
+    origin = "exex/resumed_from" if history == "append" else "exex/parent"
     run.config.update.assert_called_once_with(
-        {origin: STATE, "lxm3/history": history}, allow_val_change=True
+        {origin: STATE, "exex/history": history}, allow_val_change=True
     )
     assert json.loads(path.read_text()) == {"wandb": run.url}
 
@@ -221,9 +221,9 @@ def test_worker_imports_no_scheduler_or_tracking_sdk():
         [
             sys.executable,
             "-c",
-            "from lxm3.contrib import wandb; import sys; "
+            "from exex.contrib import wandb; import sys; "
             "assert not any(n in sys.modules for n in "
-            "['wandb', 'torch', 'tensorflow', 'jax', 'lxm3.xm_cluster', 'fabric'])",
+            "['wandb', 'torch', 'tensorflow', 'jax', 'exex.xm_cluster', 'fabric'])",
         ],
         check=True,
     )
@@ -235,7 +235,7 @@ def test_real_sdk_offline_new_state_and_disabled(tmp_path):
     script = """
 import os
 import wandb
-from lxm3.contrib import wandb as lxw
+from exex.contrib import wandb as lxw
 os.environ["WANDB_RUN_ID"] = "not-the-new-run"
 os.environ.pop("WANDB_MODE", None)
 wandb.setup(wandb.Settings(mode="offline"))
@@ -251,8 +251,8 @@ with lxw.init(state=state, settings=wandb.Settings(mode="offline", project="new-
     assert child.project == "new-project"
     assert child.group == "different-group"
     assert child.step == 0
-    assert child.config["lxm3/parent"] == state
-    assert child.config["lxm3/history"] == "new"
+    assert child.config["exex/parent"] == state
+    assert child.config["exex/history"] == "new"
 with lxw.init(mode="disabled") as disabled:
     assert lxw.checkpoint_state(disabled) is None
 assert "torch" not in __import__("sys").modules
@@ -283,10 +283,10 @@ def test_documented_example_retains_offline_history(tmp_path):
         [
             sys.executable,
             "-m",
-            "lxm3.cli.cli",
+            "exex.cli.cli",
             "launch",
             str(launcher),
-            f"--lxm_config={config_file}",
+            f"--exex_config={config_file}",
         ],
         cwd=tmp_path,
         env={**os.environ, "WANDB_SILENT": "true"},
@@ -304,7 +304,7 @@ def test_documented_example_retains_offline_history(tmp_path):
         artifacts["tracking_state"].fetch(tmp_path / "state.json").read_text()
     )
     assert state["next_step"] == 3
-    assert state["project"] == "lxm3-example" and state["entity"] == "example"
+    assert state["project"] == "exex-example" and state["entity"] == "example"
     history = artifacts["wandb_history"].fetch(tmp_path / "history.wandb")
     reader = DataStore()
     reader.open_for_scan(str(history))

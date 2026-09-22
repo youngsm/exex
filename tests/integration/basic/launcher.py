@@ -4,8 +4,8 @@ import os
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster
+from exex import xm
+from exex import xm_cluster
 
 _SINGULARITY_IMAGE = flags.DEFINE_string(
     "singularity_image", None, "Name of singularity image"

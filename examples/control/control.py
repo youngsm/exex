@@ -3,7 +3,7 @@
 import argparse
 import asyncio
 
-from lxm3 import xm_cluster as xc
+from exex import xm_cluster as xc
 
 
 async def main(args):

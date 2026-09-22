@@ -12,15 +12,15 @@ from unittest import mock
 import attr
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import slurm
-from lxm3.xm_cluster import executables
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster import job_snapshot
-from lxm3.xm_cluster.execution import gridengine
-from lxm3.xm_cluster.execution import local
-from lxm3.xm_cluster.execution.slurm import SlurmJobScriptBuilder
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import slurm
+from exex.xm_cluster import executables
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster import job_snapshot
+from exex.xm_cluster.execution import gridengine
+from exex.xm_cluster.execution import local
+from exex.xm_cluster.execution.slurm import SlurmJobScriptBuilder
 
 
 class Choice(enum.Enum):
@@ -193,8 +193,8 @@ def isolated_loop_policy(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     yield
     asyncio.set_event_loop_policy(previous)
 
@@ -313,7 +313,7 @@ def test_fresh_process_without_launcher_reads_local_job_source_and_script(tmp_pa
     launcher = tmp_path / "launcher.py"
     launcher.write_text("""
 import sys
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config({"local": {"storage": {"staging": sys.argv[1]}}})
 with xc.create_experiment("fresh history", config=config) as experiment:
     source = xc.SourceTree(xc.CommandList(["true"]), sys.argv[1], files=[])
@@ -333,7 +333,7 @@ print(experiment.experiment_id)
     launcher.unlink()
     read = """
 import json, sys
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config({"local": {"storage": {"staging": sys.argv[1]}}})
 experiment = xc.get_experiment(int(sys.argv[2]), config=config)
 unit = experiment.work_units()[1]

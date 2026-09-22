@@ -10,22 +10,22 @@ from unittest import mock
 import pytest
 from absl.testing import flagsaver
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.cli import cli
-from lxm3.clusters import slurm
-from lxm3.xm_cluster import catalog
-from lxm3.xm_cluster import config as config_lib
-from lxm3.xm_cluster import experiment as experiment_lib
+from exex import xm
+from exex import xm_cluster as xc
+from exex.cli import cli
+from exex.clusters import slurm
+from exex.xm_cluster import catalog
+from exex.xm_cluster import config as config_lib
+from exex.xm_cluster import experiment as experiment_lib
 
 
 @pytest.fixture(autouse=True)
 def isolated_defaults(monkeypatch):
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
     config_lib.default.cache_clear()
-    with flagsaver.flagsaver(lxm_config=None):
+    with flagsaver.flagsaver(exex_config=None):
         yield
     config_lib.default.cache_clear()
 
@@ -53,7 +53,7 @@ def test_discovery_filters_orders_and_returns_read_only_handles(config, monkeypa
             xc.create_experiment("same title", project=project, config=config)
     database = catalog.Catalog(config.local_settings().storage_root).path
     before = database.read_bytes()
-    monkeypatch.setenv("LXM_PROJECT", "not-an-implicit-filter")
+    monkeypatch.setenv("EXEX_PROJECT", "not-an-implicit-filter")
     with mock.patch.object(
         subprocess, "Popen", side_effect=AssertionError("External operation")
     ):
@@ -102,23 +102,23 @@ def saved(config, tmp_path, monkeypatch):
         "first\nliteral [red] $ ' second\nlast-without-newline"
     )
     (logs / "task-1.log").write_text("array-task-one\n")
-    config_file = tmp_path / "lxm.toml"
+    config_file = tmp_path / "exex.toml"
     config_file.write_text(
         "[local.storage]\nstaging = "
         + json.dumps(config.local_settings().storage_root)
         + "\n"
     )
-    monkeypatch.setenv("LXM_CONFIG", str(config_file))
+    monkeypatch.setenv("EXEX_CONFIG", str(config_file))
     return experiment, config_file
 
 
 def invoke(*arguments):
-    cli.main(cli._parse_flags(["lxm3", *map(str, arguments)]))
+    cli.main(cli._parse_flags(["exex", *map(str, arguments)]))
 
 
 def run_cli(*arguments, **kwargs):
     return subprocess.run(
-        [sys.executable, "-m", "lxm3.cli.cli", *map(str, arguments)],
+        [sys.executable, "-m", "exex.cli.cli", *map(str, arguments)],
         capture_output=True,
         text=True,
         timeout=30,
@@ -271,10 +271,10 @@ def test_cli_errors_exit_nonzero_without_changing_records(saved, command, diagno
 @pytest.mark.parametrize("before_command", [False, True])
 def test_explicit_config_flag_overrides_environment(saved, before_command):
     _, config_file = saved
-    flag = f"--lxm_config={config_file}"
+    flag = f"--exex_config={config_file}"
     arguments = [flag, "experiments"] if before_command else ["experiments", flag]
     result = run_cli(
-        *arguments, env={**os.environ, "LXM_CONFIG": "/missing/config"}, check=True
+        *arguments, env={**os.environ, "EXEX_CONFIG": "/missing/config"}, check=True
     )
     assert "literal [red] title" in result.stdout
 
@@ -305,12 +305,12 @@ def test_script_cli_fresh_process_is_read_only_and_file_errors_propagate(
     path.write_text("#!/bin/bash\necho 'literal $ [red]'\n# no final newline")
     experiment.work_units()[1]._save(script_path=str(path))
     before = experiment._catalog.path.read_bytes()
-    flag = f"--lxm_config={config_file}"
+    flag = f"--exex_config={config_file}"
     arguments = (
         [flag, "script", "101", "1"] if before_command else ["script", "101", "1", flag]
     )
     result = run_cli(
-        *arguments, env={**os.environ, "LXM_CONFIG": "/missing/config"}, check=True
+        *arguments, env={**os.environ, "EXEX_CONFIG": "/missing/config"}, check=True
     )
     assert result.stdout == path.read_text()
     path.unlink()
@@ -320,22 +320,22 @@ def test_script_cli_fresh_process_is_read_only_and_file_errors_propagate(
 
 
 def test_version_help_and_launch_argument_forwarding_are_preserved(tmp_path):
-    environment = {**os.environ, "LXM_CONFIG": "/missing/config"}
-    assert run_cli("version", env=environment, check=True).stdout.startswith("lxm3 ")
+    environment = {**os.environ, "EXEX_CONFIG": "/missing/config"}
+    assert run_cli("version", env=environment, check=True).stdout.startswith("exex ")
     assert "experiments" in run_cli("--help", env=environment, check=True).stdout
     launcher = tmp_path / "launcher.py"
     launcher.write_text("""from absl import flags
-from lxm3.xm_cluster import config
+from exex.xm_cluster import config
 message = flags.DEFINE_string("message", "", "Test forwarded argument.")
 def main(argv):
     print(repr(message.value))
-    print(config.LXM_CONFIG.value)
+    print(config.EXEX_CONFIG.value)
 """)
     result = run_cli(
         "launch",
         launcher,
         "--",
-        "--lxm_config=/forwarded/config",
+        "--exex_config=/forwarded/config",
         "--message=literal $ ' --flag",
         env=environment,
         check=True,

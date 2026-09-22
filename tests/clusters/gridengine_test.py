@@ -6,7 +6,7 @@ import fabric
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3.clusters import gridengine
+from exex.clusters import gridengine
 
 
 class GridEngineTest(parameterized.TestCase):

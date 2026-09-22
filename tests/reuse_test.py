@@ -9,12 +9,12 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import slurm
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster.packaging import router
-from lxm3.xm_cluster.packaging import source as source_capture
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import slurm
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster.packaging import router
+from exex.xm_cluster.packaging import source as source_capture
 
 
 @pytest.fixture(autouse=True)
@@ -22,8 +22,8 @@ def isolated_loop_policy(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     yield
     asyncio.set_event_loop_policy(previous)
 
@@ -233,7 +233,7 @@ def test_deleted_checkout_reused_by_concurrent_fresh_processes(config, tmp_path)
     launcher = """
 import json, sys, tempfile
 from pathlib import Path
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config(json.loads(sys.argv[1]))
 with xc.create_experiment('process boundary', project='test', config=config) as experiment:
     with tempfile.TemporaryDirectory() as checkout:
@@ -256,7 +256,7 @@ print(json.dumps([experiment.experiment_id, source.id]))
     original = xc.get_experiment(experiment_id, config=config).work_units()[1]._record
     reader = """
 import asyncio, json, sys
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config(json.loads(sys.argv[1]))
 async def append():
     async with xc.get_experiment(int(sys.argv[2]), config=config) as experiment:

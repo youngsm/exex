@@ -4,11 +4,11 @@ from unittest import mock
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3 import xm
-from lxm3 import xm_cluster
-from lxm3.xm_cluster import array_job
-from lxm3.xm_cluster import config as config_lib
-from lxm3.xm_cluster import experiment as cluster_experiment
+from exex import xm
+from exex import xm_cluster
+from exex.xm_cluster import array_job
+from exex.xm_cluster import config as config_lib
+from exex.xm_cluster import experiment as cluster_experiment
 
 _TEST_CONFIG = """
 project = ""
@@ -22,7 +22,7 @@ server = "localhost"
 user = "user"
 
 [clusters.storage]
-staging = "/home/foo/lxm3-staging"
+staging = "/home/foo/exex-staging"
 """
 
 

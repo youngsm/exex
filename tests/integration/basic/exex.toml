@@ -1,0 +1,7 @@
+project = ""
+[local]
+[local.storage]
+staging = ".cache/exex"
+
+[local.env]
+BAR = "FOO"

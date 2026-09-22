@@ -2,7 +2,7 @@
 
 import argparse
 
-from lxm3 import xm_cluster as xc
+from exex import xm_cluster as xc
 
 
 def main():

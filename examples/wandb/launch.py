@@ -7,13 +7,13 @@ from pathlib import Path
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.contrib.wandb import configure_wandb
+from exex import xm
+from exex import xm_cluster as xc
+from exex.contrib.wandb import configure_wandb
 
 MODE = flags.DEFINE_enum("wandb_mode", "offline", ["offline", "online"], "W&B mode")
 ENTITY = flags.DEFINE_string("wandb_entity", "example", "W&B team or username")
-PROJECT = flags.DEFINE_string("wandb_project", "lxm3-example", "W&B project")
+PROJECT = flags.DEFINE_string("wandb_project", "exex-example", "W&B project")
 
 
 def main(_):

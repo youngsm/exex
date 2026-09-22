@@ -12,15 +12,15 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import ssh
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster import outputs
-from lxm3.xm_cluster.execution import gridengine
-from lxm3.xm_cluster.execution import slurm
-from lxm3.xm_cluster.execution.artifact_io import capture
-from lxm3.xm_cluster.execution.artifact_io import digest_file
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import ssh
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster import outputs
+from exex.xm_cluster.execution import gridengine
+from exex.xm_cluster.execution import slurm
+from exex.xm_cluster.execution.artifact_io import capture
+from exex.xm_cluster.execution.artifact_io import digest_file
 
 
 @pytest.fixture(autouse=True)
@@ -28,8 +28,8 @@ def isolated_loop_policy(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     yield
     asyncio.set_event_loop_policy(previous)
 
@@ -50,9 +50,9 @@ def test_reopened_outputs_survive_cleanup_and_cannot_overwrite(config, tmp_path)
             experiment,
             tmp_path,
             [
-                'printf "%s" "$PWD" > "$LXM_OUTPUT_DIR/result.txt"',
-                'mkdir -p "$LXM_OUTPUT_DIR/checkpoint/empty"',
-                'printf weights > "$LXM_OUTPUT_DIR/checkpoint/weights.bin"',
+                'printf "%s" "$PWD" > "$EXEX_OUTPUT_DIR/result.txt"',
+                'mkdir -p "$EXEX_OUTPUT_DIR/checkpoint/empty"',
+                'printf weights > "$EXEX_OUTPUT_DIR/checkpoint/weights.bin"',
             ],
         )
         declared = {"result": "result.txt", "checkpoint": "checkpoint"}
@@ -86,7 +86,7 @@ def test_add_preserves_defaults_and_overrides(config, tmp_path, payload):
         executable = package(
             experiment,
             tmp_path,
-            ['printf "%s\\n" "$@" "$VALUE" > "$LXM_OUTPUT_DIR/result"; :'],
+            ['printf "%s\\n" "$@" "$VALUE" > "$EXEX_OUTPUT_DIR/result"; :'],
         )
         executable.args = xm.SequentialArgs.from_collection(["default"])
         executable.env_vars = {"VALUE": "default"}
@@ -114,7 +114,7 @@ def test_failure_does_not_publish_partial_results(config, tmp_path, failure):
     experiment = xc.create_experiment("failure", config=config)
     with pytest.raises(subprocess.CalledProcessError) as error:
         with experiment:
-            commands = ['printf present > "$LXM_OUTPUT_DIR/first"']
+            commands = ['printf present > "$EXEX_OUTPUT_DIR/first"']
             if failure == "exit":
                 commands.append("exit 7")
             executable = package(experiment, tmp_path, commands)
@@ -139,7 +139,7 @@ def test_array_results_are_independent_even_with_a_failed_sibling(config, tmp_pa
                 tmp_path,
                 [
                     'test "$VALUE" != fail',
-                    'printf "%s" "$VALUE" > "$LXM_OUTPUT_DIR/result"',
+                    'printf "%s" "$VALUE" > "$EXEX_OUTPUT_DIR/result"',
                 ],
             )
             experiment.add(
@@ -234,7 +234,7 @@ def test_corrupt_or_unsafe_archives_are_not_exposed(tmp_path):
         )
     assert not (tmp_path / "download").exists()
     assert not (tmp_path / "escaped").exists()
-    assert not list(tmp_path.glob(".lxm-fetch-*"))
+    assert not list(tmp_path.glob(".exex-fetch-*"))
 
 
 def test_remote_receipt_and_streaming_fetch_use_recorded_endpoint(tmp_path):
@@ -274,7 +274,7 @@ def test_remote_receipt_and_streaming_fetch_use_recorded_endpoint(tmp_path):
             artifact.fetch(tmp_path / "failed")
     assert command.call_count == 1
     assert not (tmp_path / "failed").exists()
-    assert not list(tmp_path.glob(".lxm-fetch-*"))
+    assert not list(tmp_path.glob(".exex-fetch-*"))
 
 
 @pytest.mark.parametrize(
@@ -289,7 +289,7 @@ def test_native_array_offset_and_retention_location(
 ):
     experiment = xc.create_experiment("native", config=config)
     executable = package(
-        experiment, tmp_path, ['printf result > "$LXM_OUTPUT_DIR/result"']
+        experiment, tmp_path, ['printf result > "$EXEX_OUTPUT_DIR/result"']
     )
     script = builder.build(
         xc.ArrayJob(executable, executor, args=[[], []]),
@@ -309,14 +309,14 @@ def test_native_array_offset_and_retention_location(
 
 def test_fresh_process_retrieval_requires_no_launcher_or_worker_tree(tmp_path):
     setup = f"""
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config({{"local": {{"storage": {{"staging": {str(tmp_path / "store")!r}}}}}}})
 """
     launcher = (
         setup
         + f"""
 with xc.create_experiment("fresh", config=config) as experiment:
-    source = xc.SourceTree(xc.CommandList(['printf value > "$LXM_OUTPUT_DIR/result"']), {str(tmp_path)!r}, files=[])
+    source = xc.SourceTree(xc.CommandList(['printf value > "$EXEX_OUTPUT_DIR/result"']), {str(tmp_path)!r}, files=[])
     [executable] = experiment.package([xm.Packageable(source, xc.Local.Spec())])
     experiment.add(xm.Job(executable, xc.Local()), outputs={{"result": "result"}})
 print(experiment.experiment_id)
@@ -330,7 +330,7 @@ print(experiment.experiment_id)
         setup
         + f"""
 from unittest import mock
-from lxm3.xm_cluster import packaging
+from exex.xm_cluster import packaging
 with mock.patch.object(packaging, "package", side_effect=AssertionError("must not package")):
     unit = xc.get_experiment({experiment_id}, config=config).work_units()[1]
     assert unit.artifacts()["result"].fetch({str(tmp_path / "download")!r}).read_text() == "value"

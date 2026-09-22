@@ -9,11 +9,11 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import slurm
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster.execution.local import LocalExecutionHandle
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import slurm
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster.execution.local import LocalExecutionHandle
 
 
 @pytest.fixture

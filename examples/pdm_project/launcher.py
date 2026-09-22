@@ -2,9 +2,9 @@
 from absl import app
 from absl import flags
 
-from lxm3 import xm
-from lxm3 import xm_cluster
-from lxm3.contrib import ucl
+from exex import xm
+from exex import xm_cluster
+from exex.contrib import ucl
 
 _LAUNCH_ON_CLUSTER = flags.DEFINE_boolean(
     "launch_on_cluster", False, "Launch on cluster"

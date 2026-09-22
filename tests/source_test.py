@@ -12,10 +12,10 @@ from unittest import mock
 import attr
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster.packaging import router
+from exex import xm
+from exex import xm_cluster as xc
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster.packaging import router
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ def isolated_loop_policy():
 
 @pytest.fixture
 def experiment(tmp_path, monkeypatch):
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
     config = xc.Config(
         {
@@ -326,7 +326,7 @@ def test_symlinked_parent_cannot_capture_outside_tree(experiment, checkout, tmp_
 def test_local_store_inside_checkout_does_not_capture_itself(checkout, monkeypatch):
     git(checkout, "init", "-q")
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    config = xc.Config({"local": {"storage": {"staging": str(checkout / ".lxm")}}})
+    config = xc.Config({"local": {"storage": {"staging": str(checkout / ".exex")}}})
     experiment = xc.create_experiment("capture", config=config)
     first = experiment.freeze(spec(checkout, files=None))
     second = experiment.freeze(spec(checkout, files=None))

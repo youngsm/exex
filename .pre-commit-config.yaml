@@ -16,4 +16,4 @@ repos:
       args: [ --fix ]
     # Run the formatter.
     - id: ruff-format
-      exclude: ^lxm3/_vendor
+      exclude: ^exex/_vendor

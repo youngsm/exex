@@ -1,4 +1,4 @@
-"""Optional PyTorch workload; the launcher and LXM3 do not depend on PyTorch."""
+"""Optional PyTorch workload; the launcher and Exex do not depend on PyTorch."""
 
 import hashlib
 import json

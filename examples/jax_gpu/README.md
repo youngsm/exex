@@ -1,12 +1,12 @@
 # Basic example
 This example shows how to launch python programs in JAX (with GPU acceleration) using
-lxm3.
+exex.
 
 ## 1. Prerequisites
 This section walks through the steps for setting up Singularity, which is the preferred
-way of running jobs created by lxm3.
+way of running jobs created by exex.
 
-This section is not specific to lxm3: you can use the same steps to set up Singularity
+This section is not specific to exex: you can use the same steps to set up Singularity
 for other projects.
 
 ### 1.1 Install Singularity
@@ -87,19 +87,19 @@ others to reproduce your environment even if they have no experience with singul
 Great! You have now completed all pre-requisites for working with Singularity images.
 Let's move on to the next section.
 
-## 2. Running the example with LXM3
+## 2. Running the example with Exex
 
-### 2.1 Install lxm3
+### 2.1 Install exex
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-# Install lxm3
+# Install exex
 python3 -m pip install ../../
-# Try out the lxm3 command
-lxm3 --help
+# Try out the exex command
+exex --help
 ```
 
-### 2.2 Set up a configuration file for lxm3
+### 2.2 Set up a configuration file for exex
 Put the following content in a file called `lxm.toml`:
 ```toml
 project = "" # Optional project name
@@ -125,8 +125,8 @@ user = "<TODO>"
 # proxycommand = ""
 
 [clusters.storage]
-# Replace with the path to a staging directory on the cluster. lxm3 uses this directory for storing all files required to run your job.
-staging = "<absolute path to your home directory>/lxm3-staging"
+# Replace with the path to a staging directory on the cluster. exex uses this directory for storing all files required to run your job.
+staging = "<absolute path to your home directory>/exex-staging"
 
 ```
 ### 2.3 Run the example
@@ -134,7 +134,7 @@ Before explaining the details, let's just run the example and see what happens.
 #### Running locally
 Let's first try running the example locally.
 ```bash
-lxm3 launch launcher.py -- --lxm_config lxm.toml
+exex launch launcher.py -- --exex_config lxm.toml
 ```
 
 #### Running on the cluster
@@ -145,10 +145,10 @@ make it work on a different cluster._
 
 Now let's try running the example on the cluster.
 ```bash
-lxm3 launch launcher.py -- --lxm_config lxm.toml --launch_on_cluster
+exex launch launcher.py -- --exex_config lxm.toml --launch_on_cluster
 ```
 
 ### 2.4 Run a batch job
 ```bash
-lxm3 launch batch_launcher.py -- --lxm_config lxm.toml --launch_on_cluster
+exex launch batch_launcher.py -- --exex_config lxm.toml --launch_on_cluster
 ```

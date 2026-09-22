@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.xm_cluster import executables
-from lxm3.xm_cluster.execution.local import LocalJobScriptBuilder
-from lxm3.xm_cluster.execution.slurm import SlurmJobScriptBuilder
-from lxm3.xm_cluster.packaging import router
+from exex import xm
+from exex import xm_cluster as xc
+from exex.xm_cluster import executables
+from exex.xm_cluster.execution.local import LocalJobScriptBuilder
+from exex.xm_cluster.execution.slurm import SlurmJobScriptBuilder
+from exex.xm_cluster.packaging import router
 
 IMAGE = "id:" + "f" * 64
 LITERAL = "literal $value ' $(touch DO_NOT_CREATE) with spaces\nand a newline"

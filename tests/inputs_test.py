@@ -16,18 +16,18 @@ from unittest import mock
 import pytest
 from fsspec.implementations.local import LocalFileSystem
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import slurm as native_slurm
-from lxm3.clusters import ssh
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster import inputs
-from lxm3.xm_cluster.execution import artifact_io
-from lxm3.xm_cluster.execution import gridengine
-from lxm3.xm_cluster.execution import slurm
-from lxm3.xm_cluster.execution.artifact_io import capture
-from lxm3.xm_cluster.execution.artifact_io import digest_file
-from lxm3.xm_cluster.execution.artifact_io import prepare
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import slurm as native_slurm
+from exex.clusters import ssh
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster import inputs
+from exex.xm_cluster.execution import artifact_io
+from exex.xm_cluster.execution import gridengine
+from exex.xm_cluster.execution import slurm
+from exex.xm_cluster.execution.artifact_io import capture
+from exex.xm_cluster.execution.artifact_io import digest_file
+from exex.xm_cluster.execution.artifact_io import prepare
 
 
 @pytest.fixture(autouse=True)
@@ -35,8 +35,8 @@ def isolated_loop_policy(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     yield
     asyncio.set_event_loop_policy(previous)
 
@@ -86,15 +86,15 @@ def test_inputs_are_frozen_private_copies_with_original_invocation(
                     experiment,
                     tmp_path,
                     [
-                        'cat "$LXM_INPUT_DIR/checkpoint/weights" > "$LXM_OUTPUT_DIR/result"',
-                        'printf changed > "$LXM_INPUT_DIR/checkpoint/weights"',
-                        'printf "%s\\n" "$VALUE" "$@" > "$LXM_OUTPUT_DIR/invocation"; :',
+                        'cat "$EXEX_INPUT_DIR/checkpoint/weights" > "$EXEX_OUTPUT_DIR/result"',
+                        'printf changed > "$EXEX_INPUT_DIR/checkpoint/weights"',
+                        'printf "%s\\n" "$VALUE" "$@" > "$EXEX_OUTPUT_DIR/invocation"; :',
                     ],
                 )
                 job = xm.Job(executable, xc.Local())
                 override = {
                     "args": ["override"],
-                    "env_vars": {"VALUE": "value", "LXM_INPUT_DIR": "/wrong"},
+                    "env_vars": {"VALUE": "value", "EXEX_INPUT_DIR": "/wrong"},
                 }
 
                 async def generator(unit, value):
@@ -153,7 +153,7 @@ def test_input_only_and_literal_names(config, tmp_path, artifact):
         executable = package(
             experiment,
             tmp_path,
-            [f'cat "$LXM_INPUT_DIR"/{escaped} > {shlex.quote(str(result))}'],
+            [f'cat "$EXEX_INPUT_DIR"/{escaped} > {shlex.quote(str(result))}'],
         )
         experiment.add(xm.Job(executable, xc.Local()), inputs={name: artifact})
     assert result.read_text() == "original"
@@ -342,7 +342,7 @@ def test_cross_site_local_execution_keeps_provenance(config, tmp_path, artifact)
             executable = package(
                 experiment,
                 tmp_path,
-                ['cat "$LXM_INPUT_DIR/checkpoint/weights" > "$LXM_OUTPUT_DIR/result"'],
+                ['cat "$EXEX_INPUT_DIR/checkpoint/weights" > "$EXEX_OUTPUT_DIR/result"'],
             )
             experiment.add(
                 xm.Job(executable, xc.Local()),
@@ -372,8 +372,8 @@ def test_native_array_tasks_get_isolated_inputs(
         experiment,
         tmp_path,
         [
-            'test "$(cat "$LXM_INPUT_DIR/checkpoint/weights")" = original',
-            'printf changed > "$LXM_INPUT_DIR/checkpoint/weights"',
+            'test "$(cat "$EXEX_INPUT_DIR/checkpoint/weights")" = original',
+            'printf changed > "$EXEX_INPUT_DIR/checkpoint/weights"',
         ],
     )
     script = builder.build(
@@ -396,14 +396,14 @@ def test_native_array_tasks_get_isolated_inputs(
 
 def test_producer_and_consumer_are_separate_processes(config, tmp_path):
     setup = f"""
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config({{"local": {{"storage": {{"staging": {str(tmp_path / "store")!r}}}}}}})
 """
     producer = (
         setup
         + f"""
 with xc.create_experiment("producer", config=config) as experiment:
-    source = xc.SourceTree(xc.CommandList(['printf original > "$LXM_OUTPUT_DIR/checkpoint"']), {str(tmp_path)!r}, files=[])
+    source = xc.SourceTree(xc.CommandList(['printf original > "$EXEX_OUTPUT_DIR/checkpoint"']), {str(tmp_path)!r}, files=[])
     [executable] = experiment.package([xm.Packageable(source, xc.Local.Spec())])
     experiment.add(xm.Job(executable, xc.Local()), outputs={{"checkpoint": "checkpoint"}})
 print(experiment.experiment_id)
@@ -418,7 +418,7 @@ print(experiment.experiment_id)
         + f"""
 artifact = xc.get_experiment({producer_id}, config=config).work_units()[1].artifacts()["checkpoint"]
 with xc.create_experiment("consumer", config=config) as experiment:
-    source = xc.SourceTree(xc.CommandList(['cat "$LXM_INPUT_DIR/checkpoint" > "$LXM_OUTPUT_DIR/result"']), {str(tmp_path)!r}, files=[])
+    source = xc.SourceTree(xc.CommandList(['cat "$EXEX_INPUT_DIR/checkpoint" > "$EXEX_OUTPUT_DIR/result"']), {str(tmp_path)!r}, files=[])
     [executable] = experiment.package([xm.Packageable(source, xc.Local.Spec())])
     experiment.add(xm.Job(executable, xc.Local()), inputs={{"checkpoint": artifact}}, outputs={{"result": "result"}})
 assert experiment.work_units()[1].artifacts()["result"].fetch({str(tmp_path / "result")!r}).read_text() == "original"

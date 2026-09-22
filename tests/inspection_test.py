@@ -12,20 +12,20 @@ from unittest import mock
 
 import pytest
 
-from lxm3 import xm
-from lxm3 import xm_cluster as xc
-from lxm3.clusters import slurm
-from lxm3.xm_cluster import catalog
-from lxm3.xm_cluster import experiment as experiment_lib
-from lxm3.xm_cluster import inspection
+from exex import xm
+from exex import xm_cluster as xc
+from exex.clusters import slurm
+from exex.xm_cluster import catalog
+from exex.xm_cluster import experiment as experiment_lib
+from exex.xm_cluster import inspection
 
 
 @pytest.fixture(autouse=True)
 def isolated_loop_policy(monkeypatch):
     previous = asyncio.get_event_loop_policy()
     asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-    monkeypatch.delenv("LXM_PROJECT", raising=False)
-    monkeypatch.delenv("LXM_CLUSTER", raising=False)
+    monkeypatch.delenv("EXEX_PROJECT", raising=False)
+    monkeypatch.delenv("EXEX_CLUSTER", raising=False)
     monkeypatch.setattr(experiment_lib, "_load_vcsinfo", lambda: None)
     yield
     asyncio.set_event_loop_policy(previous)
@@ -85,7 +85,7 @@ def observe(unit, output):
 def test_local_launch_exit_and_reopen_in_a_fresh_process(tmp_path, exit_code, expected):
     launch = """
 import json, subprocess, sys
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config({'local': {'storage': {'staging': sys.argv[1]}}})
 experiment = xc.create_experiment('fresh process', project='test', config=config)
 try:
@@ -107,7 +107,7 @@ print(json.dumps(experiment.experiment_id))
     experiment_id = json.loads(result.stdout.splitlines()[-1])
     read = """
 import asyncio, json, sys
-from lxm3 import xm, xm_cluster as xc
+from exex import xm, xm_cluster as xc
 config = xc.Config({'local': {'storage': {'staging': sys.argv[1]}}})
 experiment = xc.get_experiment(int(sys.argv[2]), config=config)
 unit = experiment.work_units()[1]
@@ -175,7 +175,7 @@ def test_reopen_is_read_only_and_does_not_replay_or_poll(config, tmp_path):
 
 
 def test_database_records_package_version_without_schema_counter(config, tmp_path):
-    import lxm3
+    import exex
 
     experiment = xc.create_experiment("version", config=config)
     with sqlite3.connect(tmp_path / "author/experiments.sqlite3") as db:
@@ -184,7 +184,7 @@ def test_database_records_package_version_without_schema_counter(config, tmp_pat
                 "SELECT package_version FROM experiments WHERE id = ?",
                 (experiment.experiment_id,),
             ).fetchone()[0]
-            == lxm3.__version__
+            == exex.__version__
         )
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
         assert db.execute("PRAGMA user_version").fetchone()[0] == 0

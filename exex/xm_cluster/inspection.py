@@ -1,0 +1,228 @@
+"""Read-only execution inspection using recorded sites, not current profiles."""
+
+import getpass
+import json
+import os
+import socket
+from dataclasses import dataclass
+
+from exex import xm
+from exex.clusters import slurm
+from exex.clusters import ssh
+
+
+@dataclass(frozen=True)
+class WorkUnitStatus(xm.ExperimentUnitStatus):
+    state: str
+    _message: str = ""
+
+    @property
+    def message(self):
+        return self._message
+
+    @property
+    def is_active(self):
+        return self.state in {"created", "queued", "running"}
+
+    @property
+    def is_completed(self):
+        return self.state == "completed"
+
+    @property
+    def is_failed(self):
+        return self.state == "failed"
+
+
+_SLURM_STATES = {
+    **dict.fromkeys(("PENDING", "CONFIGURING", "REQUEUED", "REQUEUE_HOLD"), "queued"),
+    **dict.fromkeys(("RUNNING", "COMPLETING", "RESIZING", "STAGE_OUT"), "running"),
+    **dict.fromkeys(
+        (
+            "FAILED",
+            "TIMEOUT",
+            "NODE_FAIL",
+            "OUT_OF_MEMORY",
+            "BOOT_FAIL",
+            "DEADLINE",
+            "PREEMPTED",
+        ),
+        "failed",
+    ),
+    "COMPLETED": "completed",
+    "CANCELLED": "stopped",
+    "SUSPENDED": "paused",
+}
+
+
+def aggregate(statuses):
+    for state in (
+        "failed",
+        "stopped",
+        "unknown",
+        "running",
+        "paused",
+        "queued",
+        "completed",
+    ):
+        matches = [status for status in statuses if status.state == state]
+        if matches:
+            return matches[0]
+    return WorkUnitStatus("unknown", "No execution has been recorded")
+
+
+def local_status(handles):
+    statuses = []
+    for handle in handles:
+        future = handle.future
+        if future.cancelled():
+            status = WorkUnitStatus("stopped")
+        elif not future.done():
+            status = WorkUnitStatus("running" if future.running() else "queued")
+        else:
+            error = future.exception()
+            status = (
+                WorkUnitStatus("failed", str(error))
+                if error
+                else WorkUnitStatus("completed")
+            )
+        statuses.append(status)
+    return aggregate(statuses)
+
+
+def _hostname(record):
+    host = record["hostname"]
+    same_host = host == socket.gethostname() or host == socket.getfqdn()
+    same_user = record["username"] in (None, getpass.getuser())
+    return None if same_host and same_user else host
+
+
+def execution_record(record):
+    """Overlay the execution site's current attempt; never write the catalog."""
+    directory = record.get("execution_directory")
+    if not directory:
+        return record
+    result = ssh.run(
+        [
+            "sh",
+            "-c",
+            'if test -e "$1"; then cat -- "$1"; fi',
+            "sh",
+            os.path.join(directory, "state.json"),
+        ],
+        hostname=_hostname(record),
+        username=record["username"],
+    )
+    current = json.loads(result.stdout or "{}")
+    if current.get("state") == "stopped" and record.get("state") in {
+        "stopped",
+        "failed",
+    }:
+        current.update(
+            state=record["state"], message=record["message"] or current["message"]
+        )
+    return {**record, **current}
+
+
+def request_stop(record):
+    ssh.run(
+        ["touch", "--", os.path.join(record["execution_directory"], "stop")],
+        hostname=_hostname(record),
+        username=record["username"],
+    )
+
+
+def get_script(record):
+    if record.get("script_path") is None:
+        raise xm.NotFoundError("No submission script has been recorded")
+    return ssh.run(
+        ["cat", "--", record["script_path"]],
+        hostname=_hostname(record),
+        username=record["username"],
+    ).stdout
+
+
+def get_links(record, *, task=None):
+    record = execution_record(record)
+    if task is None and record["task_count"] > 1:
+        raise ValueError("Choose a zero-based task index for array links")
+    task = 0 if task is None else task
+    if not 0 <= task < record["task_count"]:
+        raise ValueError("task must be in range")
+    directory = record.get("links_directory")
+    if directory is None:
+        return {}
+    result = ssh.run(
+        [
+            "sh",
+            "-c",
+            'if test -e "$1"; then cat -- "$1"; fi',
+            "sh",
+            os.path.join(directory, str(task), "links.json"),
+        ],
+        hostname=_hostname(record),
+        username=record["username"],
+    )
+    return json.loads(result.stdout or "{}")
+
+
+def get_status(record):
+    record = execution_record(record)
+    if record["backend"] == "gridengine":
+        raise NotImplementedError("GridEngine inspection is not implemented")
+    if record["backend"] != "slurm" or not record["native_id"]:
+        return WorkUnitStatus(record["state"], record["message"])
+    cluster = slurm.SlurmCluster(_hostname(record), record["username"])
+    rows = cluster.accounting(record["native_id"], record["job_name"])
+    job_id = record["native_id"].split(";", 1)[0]
+    statuses = []
+    for task in range(record["task_count"]):
+        native_id = f"{job_id}_{task + 1}" if record["is_array"] else job_id
+        native_state, exit_code = rows.get(native_id, ("UNKNOWN", ""))
+        state = _SLURM_STATES.get(native_state.split()[0].rstrip("+"), "unknown")
+        if state == "completed" and exit_code != "0:0":
+            state = "failed" if exit_code else "unknown"
+        if state == "completed" and record.get("execution_directory"):
+            state = {
+                "paused": "queued" if record.get("continuing") else "paused",
+                "completed": "completed",
+                "failed": "failed",
+                "stopped": "stopped",
+            }.get(record["state"], "failed")
+        message = f"{native_id}: {native_state} {exit_code}".strip()
+        if state == "stopped" and record["state"] in {"stopped", "failed"}:
+            state = record["state"]
+            message = "; ".join(filter(None, (message, record["message"])))
+        elif record.get("execution_directory") and record.get("message"):
+            message += "; " + record["message"]
+        statuses.append(WorkUnitStatus(state, message))
+    return aggregate(statuses)
+
+
+def get_logs(record, *, task=None, tail=200):
+    record = execution_record(record)
+    if record["backend"] not in {"local", "slurm"}:
+        raise NotImplementedError("Logs require a recorded Local or Slurm execution")
+    if task is None and record["task_count"] > 1:
+        raise ValueError("Choose a zero-based task index for array logs")
+    task = 0 if task is None else task
+    if not 0 <= task < record["task_count"] or tail < 0:
+        raise ValueError("task must be in range and tail must be nonnegative")
+    if record.get("log_path"):
+        filename = record["log_path"]
+    elif record["backend"] == "local":
+        filename = f"task-{task}.log"
+    else:
+        job_id = record["native_id"].split(";", 1)[0]
+        suffix = f"{job_id}_{task + 1}" if record["is_array"] else job_id
+        filename = f"{record['job_name']}-{suffix}.out"
+    return ssh.run(
+        [
+            "tail",
+            "-n",
+            str(tail),
+            "--",
+            os.path.join(record["log_directory"], filename),
+        ],
+        hostname=_hostname(record),
+        username=record["username"],
+    ).stdout

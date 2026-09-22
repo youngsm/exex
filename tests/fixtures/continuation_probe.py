@@ -9,7 +9,7 @@ from pathlib import Path
 
 import execution
 
-source = Path(os.environ["LXM_INPUT_DIR"]) / "checkpoint"
+source = Path(os.environ["EXEX_INPUT_DIR"]) / "checkpoint"
 checkpoint = (
     json.loads(source.read_text()) if source.exists() else {"step": 0, "history": []}
 )
@@ -35,7 +35,7 @@ if checkpoint["step"] < 2:
         if time.monotonic() >= deadline:
             raise TimeoutError("No cooperative pause arrived")
         time.sleep(0.1)
-output = Path(os.environ["LXM_OUTPUT_DIR"])
+output = Path(os.environ["EXEX_OUTPUT_DIR"])
 (output / "checkpoint").write_text(json.dumps(checkpoint))
 if checkpoint["step"] < 2:
     execution.mark_paused()

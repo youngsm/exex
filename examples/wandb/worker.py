@@ -5,9 +5,9 @@ import os
 import shutil
 from pathlib import Path
 
-from lxm3.contrib import wandb as tracking
+from exex.contrib import wandb as tracking
 
-output_dir = Path(os.environ["LXM_OUTPUT_DIR"])
+output_dir = Path(os.environ["EXEX_OUTPUT_DIR"])
 with tracking.init(config={"example": True}) as run:
     run.define_metric("train/global_step")
     run.define_metric("train/*", step_metric="train/global_step")

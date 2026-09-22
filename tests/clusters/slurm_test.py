@@ -4,7 +4,7 @@ from unittest import mock
 from absl.testing import absltest
 from absl.testing import parameterized
 
-from lxm3.clusters import slurm
+from exex.clusters import slurm
 
 
 class SlurmTest(parameterized.TestCase):
