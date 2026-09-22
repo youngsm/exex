@@ -161,6 +161,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
                         self.CONTAINER_JOB_PARAM_PATH,
                         read_only=True,
                     ),
+                    BindMount(xm.ShellSafeArg('"$LXM_LINK_DIR"'), "/run/lxm3/links"),
                 ]
             )
 
@@ -228,6 +229,28 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         install_dir = "$LXM_WORKDIR"
         install_cmds = self._create_install_commands(job, install_dir)
         entrypoint_cmds = self._create_entrypoint_commands(job, install_dir)
+        task = (
+            f"$(({self.ARRAY_TASK_ID} - {self.ARRAY_TASK_OFFSET}))"
+            if num_array_tasks is not None
+            else "0"
+        )
+        link_directory = shlex.quote(os.path.join(job_log_dir, "links")) + f'/"{task}"'
+        link_path = (
+            shlex.quote("/run/lxm3/links/links.json")
+            if image_type
+            in {
+                executables.ContainerImageType.SINGULARITY,
+                executables.ContainerImageType.DOCKER,
+            }
+            else link_directory + "/links.json"
+        )
+        install_cmds += (
+            f'\nLXM_LINK_DIR={link_directory}\nmkdir -p -- "$LXM_LINK_DIR"\n'
+        )
+        link_export = shlex.quote(f"export LXM_LINKS_FILE={link_path}")
+        install_cmds += (
+            f'''printf '%s\\n' {link_export} >> "$LXM_WORKDIR/job-param.sh"'''
+        )
         for kind, bindings in (("INPUT", inputs), ("OUTPUT", outputs)):
             if bindings:
                 variable = f"LXM_{kind}_DIR"
@@ -236,11 +259,6 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         if inputs:
             install_cmds += _artifact_command("prepare", '"$LXM_INPUT_DIR"', inputs)
         if outputs:
-            task = (
-                f"$(({self.ARRAY_TASK_ID} - {self.ARRAY_TASK_OFFSET}))"
-                if num_array_tasks is not None
-                else "0"
-            )
             destination = (
                 shlex.quote(os.path.join(job_log_dir, "artifacts")) + f'/"{task}"'
             )

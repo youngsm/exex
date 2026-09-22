@@ -185,6 +185,10 @@ class ClusterWorkUnit(xm.WorkUnit):
     def get_logs(self, *, task: Optional[int] = None, tail: int = 200) -> str:
         return inspection.get_logs(self._record, task=task, tail=tail)
 
+    def get_links(self, *, task: Optional[int] = None) -> Mapping[str, str]:
+        """Read reported URLs from the recorded site, including while running."""
+        return inspection.get_links(self._record, task=task)
+
     @property
     def job(self) -> Union[xm.Job, array_job_lib.ArrayJob, None]:
         """Independent snapshot of the concrete request, not proof of acceptance."""

@@ -1,6 +1,6 @@
 # LXM3 fork: implementation delta
 
-Status: same-site input slice, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
+Status: W&B helpers and task links, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
 Upstream: [ethanluoyc/lxm3](https://github.com/ethanluoyc/lxm3), commit
 `30f55855e595ee7d8397daacb1475442265f37ef`. The
 [API proposal](fork-api-proposal.md) defines the broader method-level changes.
@@ -181,6 +181,17 @@ reopened previous producers and completed locally, on S3DF/Singularity (`3874752
 and S3DF-to-NERSC/Shifter (`58711717`). Fresh-process result retrieval, producer
 archive integrity after private-copy mutation and working-directory cleanup all
 passed. Both Slurm jobs are terminal; the linked evidence record retains their IDs.
+
+The [W&B/link slice](wandb.md) preserves `configure_wandb` and adds optional native
+Run initialization, checkpoint-state capture and URL attachment. New history is
+the default; append is explicit and never truncates, fork is permission-dependent
+and never silently falls back, and rewind is not implemented. Generic
+`execution.link(name, url)` writes a per-task receipt beside retained logs, exposed
+by `WorkUnit.get_links(task=...)` during execution and after failure/cancellation.
+No worker database connection, scheduler import, ML framework dependency, metric
+writer, retry policy, continuation or pimm migration is added. W&B's SDK is an
+optional extra. The linked documentation records tests and live qualifications;
+the broader online-history and pimm migration gates in section 8 remain separate.
 
 ## Decision and scope
 
@@ -399,8 +410,12 @@ scoped and approved; the active checkout is not reset or swept into a commit.
 
 ## 8. Complete the existing W&B integration
 
+The narrow [worker-helper and link contract](wandb.md) is implemented. The remaining
+items below concern online credential/history qualification and application
+integration, not requirements to expand the helper layer.
+
 - Keep `configure_wandb` and its Job/ArrayJob generator pattern. Preserve original job
-  names and backend metadata when wrapping; the current implementation drops names.
+  names and backend metadata when wrapping; this preservation is now implemented.
   Test precedence and avoid forcing IDs that conflict with checkpoint logger state.
 - Add generic execution-side URL reporting stored on the owning WorkUnit/attempt.
   Pimm reports its actual URL after initialization; no second logger or core W&B SDK.

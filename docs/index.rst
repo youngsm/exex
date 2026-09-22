@@ -52,6 +52,7 @@ and run the command
    getting_started
    configuration
    tips_and_tricks
+   wandb
    api
 
 

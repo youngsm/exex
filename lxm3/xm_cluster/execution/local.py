@@ -96,6 +96,7 @@ class LocalExecutionHandle:
             hostname=socket.gethostname(),
             username=getpass.getuser(),
             log_directory=log_directory,
+            links_directory=os.path.join(log_directory, "links"),
             script_path=script_path,
             artifact_directory=artifact_directory,
         )

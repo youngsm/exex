@@ -154,6 +154,7 @@ class GridEngineClient:
                 if self._settings.hostname
                 else getpass.getuser(),
                 script_path=job_script_path,
+                links_directory=os.path.join(job_log_dir, "links"),
                 artifact_directory=os.path.join(job_log_dir, "artifacts")
                 if outputs
                 else None,

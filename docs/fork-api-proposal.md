@@ -360,6 +360,10 @@ configuration overrides; changed science is a new WorkUnit with an input artifac
 
 The accompanying application-facing helper, `lxm3.execution`, has this small surface:
 
+This context/continuation API remains a proposal. The implemented link-only slice
+uses `execution.link(name, url)` and `WorkUnit.get_links(task=...)`, with one current
+receipt per task, not per-attempt history; see [W&B and links](wandb.md).
+
 ```python
 def context() -> ExecutionContext: ...
 

@@ -158,6 +158,7 @@ class SlurmClient:
                 else getpass.getuser(),
                 job_name=job_name,
                 log_directory=log_directory,
+                links_directory=os.path.join(job_log_dir, "links"),
                 script_path=job_script_path,
                 artifact_directory=os.path.join(job_log_dir, "artifacts")
                 if outputs

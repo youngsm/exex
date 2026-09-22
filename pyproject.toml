@@ -49,6 +49,7 @@ repository = "https://github.com/ethanluoyc/lxm3"
 lxm3 = "lxm3.cli.cli:entrypoint"
 
 [project.optional-dependencies]
+wandb = ["wandb>=0.28.0"]
 shell = ["IPython"]
 pex = [
     "pex>2.1.139",

@@ -1,48 +1,13 @@
-"""Helper functions for integrating with Weights & Biases.
-
-This module provides a helper function to configure environment variables for
-logging to Weights & Biases (wandb) for jobs in an experiment.
-
-Examples:
-
-with xm_cluster.create_experiment("experiment") as experiment:
-    log_to_wandb = wandb.configure_wandb(
-        project: "my_wandb_project",
-        entity: "my_wandb_entity",
-        group: str = "{title}_{xid}_{wid}",
-    )
-
-    # For single jobs:
-    experiment.add(log_to_wandb(xm.Job(executable, ...)))
-
-    # For array jobs:
-    experiment.add(log_to_wandb(xm_cluster.ArrayJob(executable, ...)))
-
-"""
+"""Optional W&B configuration and checkpoint history, without a metric writer."""
 
 import copy
-import functools
-import logging
-import subprocess
-from typing import Union
+import os
+from typing import TYPE_CHECKING, Literal, Mapping
 
-from lxm3 import xm
-from lxm3 import xm_cluster
+from lxm3 import execution
 
-
-@functools.lru_cache()
-def _get_vcs_info():
-    vcs = None
-    try:
-        import vcsinfo
-
-        vcs_root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], text=True
-        ).strip()
-        vcs = vcsinfo.detect_vcs(vcs_root)
-    except subprocess.SubprocessError:
-        logging.warn("Failed to detect VCS info")
-    return vcs
+if TYPE_CHECKING:
+    from wandb import Run
 
 
 def configure_wandb(
@@ -51,74 +16,139 @@ def configure_wandb(
     group: str = "{title}_{xid}_{wid}",
     mode: str = "online",
 ):
-    vcs = _get_vcs_info()
-    additional_envs = {
-        "WANDB_PROJECT": project,
-        "WANDB_ENTITY": entity,
-        "WANDB_MODE": mode,
-    }
+    """Wrap a Job/ArrayJob with W&B settings, preserving its other fields.
 
-    if vcs is not None:
-        if vcs.upstream_repo is not None:
-            additional_envs["WANDB_GIT_REMOTE_URL"] = vcs.upstream_repo
-        if vcs.id is not None:
-            additional_envs["WANDB_GIT_COMMIT"] = vcs.id
+    Configured values override matching job environment entries. Application
+    calls still own initialization. No run IDs or credentials are set.
+    """
+    from lxm3 import xm
+    from lxm3 import xm_cluster
 
-    def add_wandb_env_vars(job: Union[xm.Job, xm_cluster.ArrayJob]):
-        job = copy.copy(job)  # type: ignore
-
-        async def job_gen(work_unit: xm_cluster.ClusterWorkUnit):
-            experiment_title = work_unit.experiment._experiment_title  # type: ignore
-            xid = work_unit.experiment_id
-            wid = work_unit.work_unit_id
-
+    def wrap(job):
+        async def job_gen(work_unit):
+            title = work_unit.experiment._experiment_title
+            xid, wid = work_unit.experiment_id, work_unit.work_unit_id
+            name = f"{title}_{xid}_{wid}"
+            common = {
+                "WANDB_PROJECT": project,
+                "WANDB_ENTITY": entity,
+                "WANDB_MODE": mode,
+                "WANDB_RUN_GROUP": group.format(title=title, xid=xid, wid=wid),
+            }
+            wrapped = copy.copy(job)
             if isinstance(job, xm.Job):
-                env_vars = {
-                    **job.env_vars,
-                    **additional_envs,
-                    **{
-                        "WANDB_NAME": f"{experiment_title}_{xid}_{wid}",
-                        "WANDB_RUN_GROUP": group.format(
-                            title=experiment_title, xid=xid, wid=wid
-                        ),
-                    },
-                }
-                return work_unit.add(
-                    xm.Job(
-                        executable=job.executable,
-                        executor=job.executor,
-                        args=job.args,
-                        env_vars=env_vars,
-                    )
-                )
-
+                wrapped.env_vars = {**job.env_vars, **common, "WANDB_NAME": name}
             elif isinstance(job, xm_cluster.ArrayJob):
-                num_tasks = len(job.args)
-                new_env_vars = [
-                    {
-                        **job.env_vars[task_id],
-                        **additional_envs,
-                        **{
-                            "WANDB_NAME": f"{experiment_title}_{xid}_{wid}_{task_id + 1}",
-                            "WANDB_RUN_GROUP": group.format(
-                                title=experiment_title, xid=xid, wid=wid
-                            ),
-                        },
-                    }
-                    for task_id in range(num_tasks)
+                wrapped.env_vars = [
+                    {**env, **common, "WANDB_NAME": f"{name}_{task + 1}"}
+                    for task, env in enumerate(job.env_vars)
                 ]
-
-                return work_unit.add(
-                    xm_cluster.ArrayJob(
-                        executable=job.executable,
-                        executor=job.executor,
-                        args=job.args,
-                        env_vars=new_env_vars,
-                    )
-                )
             else:
-                raise NotImplementedError(f"Unsupported job type: {type(job)}")
+                raise TypeError(f"Unsupported job type: {type(job)}")
+            return await work_unit.add(wrapped)
 
         return job_gen
 
-    return add_wandb_env_vars
+    return wrap
+
+
+def init(
+    *,
+    state: Mapping | None = None,
+    history: Literal["new", "append", "fork"] = "new",
+    **wandb_kwargs,
+) -> "Run":
+    """Initialize a native W&B run and attach its URL to the executing task.
+
+    new records parent metadata without inheriting history. append resumes the
+    saved ID without truncation. fork inherits through the saved last row and
+    requires W&B permission. Errors never trigger fallback.
+    """
+    import wandb
+
+    if history not in {"new", "append", "fork"}:
+        raise ValueError("history must be 'new', 'append', or 'fork'")
+    settings = wandb_kwargs.get("settings") or {}
+    settings = (
+        settings
+        if isinstance(settings, dict)
+        else settings.model_dump(exclude_unset=True)
+    )
+    policy_keys = {"resume", "resume_from", "fork_from", "reinit"}
+    configured = {**settings, **wandb_kwargs}
+    if any(configured.get(key) not in (None, "default") for key in policy_keys) or any(
+        os.environ.get(f"WANDB_{key.upper()}") for key in policy_keys
+    ):
+        raise ValueError(
+            "Select history with history=, not resume/fork/reinit settings"
+        )
+    mode = (
+        wandb_kwargs.get("mode")
+        or settings.get("mode")
+        or os.environ.get("WANDB_MODE")
+        or wandb.setup().settings.mode
+    )
+    if history != "new" and (state is None or mode != "online"):
+        raise ValueError("append/fork require saved W&B state and online mode")
+
+    kwargs = dict(wandb_kwargs)
+    kwargs.update(
+        id=kwargs.get("id") or wandb.util.generate_id(), reinit="create_new", mode=mode
+    )
+    if state is not None:
+        for key, setting, env in (
+            ("entity", "entity", "WANDB_ENTITY"),
+            ("project", "project", "WANDB_PROJECT"),
+            ("group", "run_group", "WANDB_RUN_GROUP"),
+        ):
+            kwargs.setdefault(
+                key, settings.get(setting, os.environ.get(env, state.get(key)))
+            )
+    if history == "append":
+        kwargs.update(
+            id=state["run_id"],
+            resume="must",
+            entity=state["entity"],
+            project=state["project"],
+        )
+    elif history == "fork":
+        if state["next_step"] <= 0:
+            raise ValueError("Cannot fork before a committed W&B history row")
+        kwargs.update(
+            fork_from=f"{state['run_id']}?_step={state['next_step'] - 1}",
+            entity=state["entity"],
+            project=state["project"],
+        )
+    elif mode == "online":
+        kwargs["resume"] = "never"
+    run = wandb.init(**kwargs)
+    if state is not None and not run.disabled:
+        origin = "lxm3/resumed_from" if history == "append" else "lxm3/parent"
+        run.config.update(
+            {origin: dict(state), "lxm3/history": history}, allow_val_change=True
+        )
+    attach(run)
+    return run
+
+
+def checkpoint_state(run: "Run") -> dict | None:
+    """Capture actual identity and the next history row; None when disabled.
+
+    Commit pending metrics before calling. This neither logs an extra row nor
+    waits for server upload, and is not a durability barrier.
+    """
+    if run.disabled:
+        return None
+    return dict(
+        entity=run.entity,
+        project=run.project,
+        group=run.group,
+        run_id=run.id,
+        next_step=int(run.step),
+    )
+
+
+def attach(run: "Run") -> None:
+    """Report an existing run's actual URL without taking over its lifecycle."""
+    if not run.disabled and run.url:
+        execution.link("wandb", run.url)

@@ -64,6 +64,7 @@ def test_old_catalog_reads_remain_read_only_and_do_not_invent_history(legacy):
         assert experiment.experiment_id == 101
         assert unit.job is unit.source is None
         assert unit.artifacts() == {}
+        assert unit.get_links() == {}
         assert unit.get_status().is_completed
         assert list(experiment.sources()) == ["source-id"]
         with pytest.raises(xm.NotFoundError, match="No submission script"):
@@ -101,6 +102,7 @@ def test_first_submission_upgrades_and_preserves_existing_records(
         "outputs": None,
         "artifact_directory": None,
         "inputs": None,
+        "links_directory": None,
     }
     assert store.experiment(101) == original_experiment
     assert store.sources(101).items() >= original_sources.items()

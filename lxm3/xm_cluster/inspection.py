@@ -1,6 +1,7 @@
 """Read-only execution inspection using recorded sites, not current profiles."""
 
 import getpass
+import json
 import os
 import socket
 from dataclasses import dataclass
@@ -103,6 +104,29 @@ def get_script(record):
         hostname=_hostname(record),
         username=record["username"],
     ).stdout
+
+
+def get_links(record, *, task=None):
+    if task is None and record["task_count"] > 1:
+        raise ValueError("Choose a zero-based task index for array links")
+    task = 0 if task is None else task
+    if not 0 <= task < record["task_count"]:
+        raise ValueError("task must be in range")
+    directory = record.get("links_directory")
+    if directory is None:
+        return {}
+    result = ssh.run(
+        [
+            "sh",
+            "-c",
+            'if test -e "$1"; then cat -- "$1"; fi',
+            "sh",
+            os.path.join(directory, str(task), "links.json"),
+        ],
+        hostname=_hostname(record),
+        username=record["username"],
+    )
+    return json.loads(result.stdout or "{}")
 
 
 def get_status(record):
