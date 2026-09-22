@@ -41,6 +41,7 @@ def backend(monkeypatch):
         group="logical-run",
         id="child",
         step=8,
+        starting_step=0,
         config=mock.Mock(),
     )
     sdk = SimpleNamespace(
@@ -179,9 +180,21 @@ def test_ambient_or_native_history_cannot_override_policy(
     backend.init.assert_not_called()
 
 
-def test_checkpoint_does_not_log_or_invent_state(backend):
+@pytest.mark.parametrize(
+    "step,starting_step,next_step",
+    [(0, 0, 0), (0, 7, 7), (0, 2, 2), (9, 7, 9), (4, 2, 4)],
+    ids=["fresh", "empty-append", "empty-fork", "logged-append", "logged-fork"],
+)
+def test_checkpoint_does_not_log_or_invent_state(
+    backend, step, starting_step, next_step
+):
     run = backend.init.return_value
-    assert integration.checkpoint_state(run) == {**STATE, "run_id": "child"}
+    run.step, run.starting_step = step, starting_step
+    assert integration.checkpoint_state(run) == {
+        **STATE,
+        "run_id": "child",
+        "next_step": next_step,
+    }
     run.disabled = True
     assert integration.checkpoint_state(run) is None
     integration.attach(run)

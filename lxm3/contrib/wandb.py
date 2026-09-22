@@ -144,7 +144,8 @@ def checkpoint_state(run: "Run") -> dict | None:
         project=run.project,
         group=run.group,
         run_id=run.id,
-        next_step=int(run.step),
+        # Before the first new log, W&B can report step=0 after append/fork.
+        next_step=max(run.step, run.starting_step),
     )
 
 

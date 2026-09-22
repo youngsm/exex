@@ -75,6 +75,8 @@ use the saved project/entity. New runs may choose a different project/entity.
 
 `checkpoint_state(run)` returns entity, project, group, actual run ID and
 `next_step` (the SDK's next history-row index), or `None` for disabled tracking.
+It uses `max(run.step, run.starting_step)`: W&B 0.28.0 can report `step=0`
+before the first new log after append/fork, despite existing history.
 Commit pending metric rows before calling it. This does not log another row,
 flush uploads, save a checkpoint or guarantee that the server has received the
 history. The history index is **not** the training iteration; log your training
@@ -134,7 +136,7 @@ permission management is included in this slice.
 
 ## Qualification (2026-09-21)
 
-All 588 regressions pass; 2 upstream integration tests are deselected. Changed
+All 592 regressions pass; 2 upstream integration tests are deselected. Changed
 Python files also pass formatting and lint checks.
 
 The regression suite covers argument/environment precedence, preserved Job/ArrayJob
@@ -160,7 +162,22 @@ installation was required. These jobs are terminal; scripts, logs and the author
 catalog are retained under
 `/sdf/group/neutrino/youngsam/representations/lxm3-links-qualification.5i1fk8`.
 
-Online W&B append/fork and org permissions are **not live-qualified** by these tests.
-The server-side fork capability remains explicit and optional. Docker generation
+Separate CPU-only Local jobs on S3DF live-qualified W&B 0.28.0 in the isolated
+`dune-ml/lxm3-qualification` project: new history, append without truncation,
+fork at the saved row, native errors for duplicate-new/missing-append IDs, and
+retained WorkUnit links. Fork permission was verified only for this org;
+the capability remains explicit and optional. No rewind was requested.
+
+Checkpointing before any new log was also verified against server history:
+
+| Case | W&B run | Saved `next_step` | Unchanged server history |
+| --- | --- | --- | --- |
+| Append | [`b4ais04d`](https://wandb.ai/dune-ml/lxm3-qualification/runs/b4ais04d) | 7 | Rows 0–6 |
+| Fork | [`ghw4wp5n`](https://wandb.ai/dune-ml/lxm3-qualification/runs/ghw4wp5n) | 2 | Inherited rows 0–1 |
+
+Both runs finished; outputs were fetched through reopened WorkUnits. Diagnostic
+scripts, retained outputs and server observations are under
+`/lscratch/youngsam/tmp/lxm3-wandb-online.XmG7uF` (temporary storage).
+These online SDK tests did not run inside the GPU containers. Docker generation
 is regression-tested, not live-qualified; no GPU computation is claimed by the
 link probes.
