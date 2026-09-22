@@ -6,6 +6,25 @@ import uuid
 from pathlib import Path
 
 
+def pause_requested() -> bool:
+    """Check for a cooperative pause at an application-defined safe point.
+
+    False outside a continuation-enabled job. Distributed applications must
+    agree on this decision before entering collective checkpoint operations.
+    """
+    path = os.environ.get("LXM_PAUSE_REQUEST")
+    return bool(path and Path(path).exists())
+
+
+def mark_paused() -> None:
+    """Report a completed checkpoint, then let the application exit cleanly.
+
+    Call once from the reporting rank, after all writers finish. This neither
+    exits nor requeues; LXM3 must still observe success and retain the checkpoint.
+    """
+    Path(os.environ["LXM_PAUSE_READY"]).touch()
+
+
 def link(name: str, url: str) -> None:
     """Record a named URL for this task; do nothing outside an LXM3 job.
 

@@ -1,21 +1,27 @@
+import concurrent.futures
 import datetime
 import getpass
+import json
 import os
 import re
 import shlex
 import socket
+import threading
+from pathlib import Path
 from typing import List, Optional
 
 import attr
 
 from lxm3 import xm
 from lxm3.clusters import slurm
+from lxm3.clusters import ssh
 from lxm3.xm_cluster import array_job
 from lxm3.xm_cluster import artifacts
 from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executables
 from lxm3.xm_cluster import executors
+from lxm3.xm_cluster.execution import continuation as driver
 from lxm3.xm_cluster.execution import job_script_builder
 
 
@@ -81,16 +87,46 @@ class SlurmJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Slurm]
         *,
         outputs=None,
         inputs=None,
+        continuation=None,
     ) -> str:
         assert isinstance(job.executor, executors.Slurm)
         assert isinstance(job.executable, executables.AppBundle)
-        return super().build(job, job_name, job_log_dir, outputs=outputs, inputs=inputs)
+        return super().build(
+            job,
+            job_name,
+            job_log_dir,
+            outputs=outputs,
+            inputs=inputs,
+            continuation=continuation,
+            attached=job.executor.mode == "salloc",
+        )
 
 
 class SlurmHandle:
     def __init__(self, job_id: str, **record) -> None:
         self.job_id = job_id
         self.record = dict(backend="slurm", native_id=job_id, **record)
+
+
+class AttachedHandle(SlurmHandle):
+    def __init__(self, command, **record):
+        super().__init__("", **record)
+        self.future = concurrent.futures.Future()
+
+        def run():
+            try:
+                ssh.run(
+                    command,
+                    hostname=record["hostname"],
+                    username=record["username"],
+                    stdout=None,
+                )
+            except BaseException as error:
+                self.future.set_exception(error)
+            else:
+                self.future.set_result(None)
+
+        threading.Thread(target=run, name="lxm3-salloc", daemon=True).start()
 
 
 class SlurmClient:
@@ -119,6 +155,7 @@ class SlurmClient:
         *,
         outputs=None,
         inputs=None,
+        continuation=None,
     ):
         job_name = re.sub("\\W", "_", job_name)
         job_log_dir = job_script_builder.job_log_path(job_name)
@@ -126,10 +163,12 @@ class SlurmClient:
         job_log_dir = self._artifact_store.normalize_path(job_log_dir)
         builder = self.builder_cls()
         job_script_content = builder.build(
-            job, job_name, job_log_dir, outputs=outputs, inputs=inputs
-        )
-        job_script_path = self._artifact_store.put_text(
-            job_script_content, job_script_builder.job_script_path(job_name)
+            job,
+            job_name,
+            job_log_dir,
+            outputs=outputs,
+            inputs=inputs,
+            continuation=continuation,
         )
 
         if isinstance(job, array_job.ArrayJob):
@@ -143,30 +182,117 @@ class SlurmClient:
                 if self._settings.hostname
                 else os.path.abspath(log_directory)
             )
+        managed = continuation is not None or job.executor.mode == "salloc"
+        if managed:
+            job_script_content = self._managed_script(
+                job,
+                job_name,
+                job_log_dir,
+                log_directory,
+                job_script_content,
+                inputs=inputs,
+                continuation=continuation,
+            )
+        job_script_path = self._artifact_store.put_text(
+            job_script_content, job_script_builder.job_script_path(job_name)
+        )
+        record = dict(
+            hostname=self._settings.hostname or socket.gethostname(),
+            username=self._settings.user
+            if self._settings.hostname
+            else getpass.getuser(),
+            job_name=job_name,
+            log_directory=log_directory,
+            links_directory=os.path.join(job_log_dir, "links"),
+            script_path=job_script_path,
+            artifact_directory=os.path.join(job_log_dir, "artifacts")
+            if outputs
+            else None,
+            execution_directory=job_log_dir if managed else None,
+        )
         console.info(f"Launching {num_jobs} job on {self._settings.hostname}")
-        job_id = self._cluster.launch(job_script_path)
-        console.info(f"Successfully launched job {job_id}")
+        if job.executor.mode == "salloc":
+            # None denotes an on-site process, not an SSH back into this host.
+            handle = AttachedHandle(
+                ["bash", job_script_path],
+                **{**record, "hostname": self._settings.hostname},
+            )
+            handle.record.update(record)
+        else:
+            job_id = self._cluster.launch(job_script_path)
+            console.info(f"Successfully launched job {job_id}")
+            self._artifact_store.put_text(str(job_id), f"jobs/{job_name}/job_id")
+            handle = SlurmHandle(job_id, **record)
         console.info(f"Logs: {job_log_dir}; script: {job_script_path}")
-        self._artifact_store.put_text(str(job_id), f"jobs/{job_name}/job_id")
+        return [handle]
 
-        handles = [
-            SlurmHandle(
-                job_id,
-                hostname=self._settings.hostname or socket.gethostname(),
-                username=self._settings.user
-                if self._settings.hostname
-                else getpass.getuser(),
-                job_name=job_name,
-                log_directory=log_directory,
-                links_directory=os.path.join(job_log_dir, "links"),
-                script_path=job_script_path,
-                artifact_directory=os.path.join(job_log_dir, "artifacts")
-                if outputs
-                else None,
+    def _managed_script(
+        self, job, name, directory, logs, payload, *, inputs, continuation
+    ):
+        store = self._artifact_store
+        root = job_script_builder.job_path(name)
+        payload_path = store.put_text(payload, root + "/payload.sh")
+        driver_path = store.put_text(
+            Path(driver.__file__).read_text(), root + "/driver.py"
+        )
+        header = self.builder_cls._create_job_script_header(
+            job.executable, job.executor, None, directory, name
+        )
+        options = [
+            arg
+            for line in header.splitlines()
+            for arg in shlex.split(line.removeprefix("#SBATCH "))
+        ]
+        salloc_options = [
+            arg
+            for arg in options
+            if not arg.startswith(
+                (
+                    "--output=",
+                    "--error=",
+                    "--signal=",
+                    "--requeue",
+                    "--no-requeue",
+                    "--open-mode=",
+                )
             )
         ]
-
-        return handles
+        step_options = [
+            arg
+            for arg in options
+            if arg.startswith(
+                ("--gpus", "--gres=", "--cpus-per-task=", "--cpus-per-gpu=")
+            )
+        ]
+        config_path = store.put_text(
+            json.dumps(
+                dict(
+                    directory=directory,
+                    log_directory=logs,
+                    payload=payload_path,
+                    job_name=name,
+                    continuation=continuation,
+                    inputs=inputs or {},
+                    salloc_options=salloc_options,
+                    step_options=step_options,
+                )
+            ),
+            root + "/driver.json",
+        )
+        mode = "batch" if job.executor.mode == "sbatch" else "attached"
+        if mode == "batch":
+            header += f"\n#SBATCH --requeue\n#SBATCH --signal=B:USR1@{continuation['pause_before']}\n#SBATCH --open-mode=append"
+        else:
+            header = ""
+        return (
+            self.builder_cls.JOB_SCRIPT_SHEBANG
+            + "\n"
+            + header
+            + "\nset -e\n"
+            + "exec python3 "
+            + shlex.join([driver_path, mode, config_path])
+            + "\n"
+        )
 
 
 def client(
@@ -197,6 +323,7 @@ async def launch(
     project: Optional[str],
     outputs=None,
     inputs=None,
+    continuation=None,
 ) -> List[SlurmHandle]:
     jobs = job_script_builder.flatten_job(job)
     jobs = [job for job in jobs if _slurm_job_predicate(job)]
@@ -211,7 +338,7 @@ async def launch(
 
     settings = config.cluster_settings(jobs[0].executor.cluster)
     return client(settings=settings, project=project).launch(
-        job_name, jobs[0], outputs=outputs, inputs=inputs
+        job_name, jobs[0], outputs=outputs, inputs=inputs, continuation=continuation
     )
 
 

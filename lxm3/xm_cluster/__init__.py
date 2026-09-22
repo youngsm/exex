@@ -3,6 +3,7 @@ import logging
 
 from lxm3.xm_cluster.array_job import ArrayJob
 from lxm3.xm_cluster.config import Config
+from lxm3.xm_cluster.continuation import Continuation
 from lxm3.xm_cluster.executable_specs import CommandList
 from lxm3.xm_cluster.executable_specs import DockerContainer
 from lxm3.xm_cluster.executable_specs import Fileset

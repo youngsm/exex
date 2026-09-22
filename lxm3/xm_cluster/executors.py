@@ -208,6 +208,8 @@ class Slurm(xm.Executor, SupportsContainer):
     cleaned up; use a shared parent when workers on other nodes need the files.
     container_options configures the runtime selected by the executable's image;
     None uses runtime defaults. Host executables accept only None.
+    mode selects detached sbatch submission or an attached owned salloc chain.
+    It does not select QoS or borrow an existing allocation.
     """
 
     requirements: JobRequirements = attr.Factory(JobRequirements)
@@ -232,6 +234,12 @@ class Slurm(xm.Executor, SupportsContainer):
 
     cluster: Optional[str] = attr.field(default=None, kw_only=True)
     workdir_root: Optional[str] = attr.field(default=None, kw_only=True)
+
+    mode: str = attr.field(
+        default="sbatch",
+        kw_only=True,
+        validator=attr.validators.in_(("sbatch", "salloc")),
+    )
 
     def Spec(self) -> SlurmSpec:
         return SlurmSpec(cluster=self.cluster)

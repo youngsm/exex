@@ -96,6 +96,41 @@ def _hostname(record):
     return None if same_host and same_user else host
 
 
+def execution_record(record):
+    """Overlay the execution site's current attempt; never write the catalog."""
+    directory = record.get("execution_directory")
+    if not directory:
+        return record
+    result = ssh.run(
+        [
+            "sh",
+            "-c",
+            'if test -e "$1"; then cat -- "$1"; fi',
+            "sh",
+            os.path.join(directory, "state.json"),
+        ],
+        hostname=_hostname(record),
+        username=record["username"],
+    )
+    current = json.loads(result.stdout or "{}")
+    if current.get("state") == "stopped" and record.get("state") in {
+        "stopped",
+        "failed",
+    }:
+        current.update(
+            state=record["state"], message=record["message"] or current["message"]
+        )
+    return {**record, **current}
+
+
+def request_stop(record):
+    ssh.run(
+        ["touch", "--", os.path.join(record["execution_directory"], "stop")],
+        hostname=_hostname(record),
+        username=record["username"],
+    )
+
+
 def get_script(record):
     if record.get("script_path") is None:
         raise xm.NotFoundError("No submission script has been recorded")
@@ -107,6 +142,7 @@ def get_script(record):
 
 
 def get_links(record, *, task=None):
+    record = execution_record(record)
     if task is None and record["task_count"] > 1:
         raise ValueError("Choose a zero-based task index for array links")
     task = 0 if task is None else task
@@ -130,6 +166,7 @@ def get_links(record, *, task=None):
 
 
 def get_status(record):
+    record = execution_record(record)
     if record["backend"] == "gridengine":
         raise NotImplementedError("GridEngine inspection is not implemented")
     if record["backend"] != "slurm" or not record["native_id"]:
@@ -144,15 +181,25 @@ def get_status(record):
         state = _SLURM_STATES.get(native_state.split()[0].rstrip("+"), "unknown")
         if state == "completed" and exit_code != "0:0":
             state = "failed" if exit_code else "unknown"
+        if state == "completed" and record.get("execution_directory"):
+            state = {
+                "paused": "queued" if record.get("continuing") else "paused",
+                "completed": "completed",
+                "failed": "failed",
+                "stopped": "stopped",
+            }.get(record["state"], "failed")
         message = f"{native_id}: {native_state} {exit_code}".strip()
         if state == "stopped" and record["state"] in {"stopped", "failed"}:
             state = record["state"]
             message = "; ".join(filter(None, (message, record["message"])))
+        elif record.get("execution_directory") and record.get("message"):
+            message += "; " + record["message"]
         statuses.append(WorkUnitStatus(state, message))
     return aggregate(statuses)
 
 
 def get_logs(record, *, task=None, tail=200):
+    record = execution_record(record)
     if record["backend"] not in {"local", "slurm"}:
         raise NotImplementedError("Logs require a recorded Local or Slurm execution")
     if task is None and record["task_count"] > 1:
@@ -160,7 +207,9 @@ def get_logs(record, *, task=None, tail=200):
     task = 0 if task is None else task
     if not 0 <= task < record["task_count"] or tail < 0:
         raise ValueError("task must be in range and tail must be nonnegative")
-    if record["backend"] == "local":
+    if record.get("log_path"):
+        filename = record["log_path"]
+    elif record["backend"] == "local":
         filename = f"task-{task}.log"
     else:
         job_id = record["native_id"].split(";", 1)[0]

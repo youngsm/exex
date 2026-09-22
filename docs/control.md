@@ -17,6 +17,13 @@ supports Slurm and attached/reopened Local. Local cancellation and GridEngine
 control are not implemented. Retrieved experiments now support
 [append-only submission and retained source reuse](source-capture.md#retrieve-and-add-another-run).
 
+For [continuation-enabled Slurm jobs](continuation.md), `stop()` also records a
+stop flag before native cancellation, preventing subsequent attempts. Attached
+`salloc` launchers wait on experiment-context exit; interrupting that launcher
+requests cancellation of its owned work. Interrupting an independent reader's
+`wait_until_complete()` remains read-only. A budget-exhausted cooperative pause
+raises the existing not-completed error when waited on.
+
 This keeps the existing Experiment/WorkUnit model and async wrapper. No new
 dependencies, schema changes, process manager, scheduler-discovery path or retries
 are needed. Native cancellation lives in `clusters/slurm.py`; the WorkUnit owns

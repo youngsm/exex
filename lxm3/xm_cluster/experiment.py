@@ -2,6 +2,7 @@ import asyncio
 import functools
 import json
 import subprocess
+from dataclasses import asdict
 from typing import Any, Awaitable, Mapping, Optional, Sequence, Union
 
 import vcsinfo
@@ -16,12 +17,14 @@ from lxm3.xm_cluster import catalog
 from lxm3.xm_cluster import config as config_lib
 from lxm3.xm_cluster import console
 from lxm3.xm_cluster import executable_specs
+from lxm3.xm_cluster import executors
 from lxm3.xm_cluster import inputs as input_lib
 from lxm3.xm_cluster import inspection
 from lxm3.xm_cluster import job_snapshot
 from lxm3.xm_cluster import metadata
 from lxm3.xm_cluster import outputs as output_lib
 from lxm3.xm_cluster import packaging
+from lxm3.xm_cluster.continuation import Continuation
 from lxm3.xm_cluster.execution import gridengine as gridengine_execution
 from lxm3.xm_cluster.execution import job_script_builder
 from lxm3.xm_cluster.execution import local as local_execution
@@ -47,6 +50,7 @@ async def _launch(
     project: Optional[str],
     outputs=None,
     inputs=None,
+    continuation=None,
 ):
     local_handles = []
     non_local_handles = []
@@ -81,6 +85,7 @@ async def _launch(
             project=project,
             outputs=outputs,
             inputs=inputs,
+            continuation=continuation,
         )
     )
     non_local_handles.extend(
@@ -139,6 +144,26 @@ class ClusterWorkUnit(xm.WorkUnit):
         try:
             (payload,) = job_script_builder.flatten_job(job)
             is_array = isinstance(payload, array_job_lib.ArrayJob)
+            policy = json.loads(self._record.get("continuation") or "null")
+            managed = policy is not None or (
+                isinstance(payload.executor, executors.Slurm)
+                and payload.executor.mode == "salloc"
+            )
+            if managed and (
+                is_array or not isinstance(payload.executor, executors.Slurm)
+            ):
+                raise ValueError(
+                    "Continuation and salloc require a singleton Slurm job"
+                )
+            if policy is not None:
+                walltime = payload.executor.walltime
+                if (
+                    walltime is None
+                    or policy["pause_before"] >= walltime.total_seconds()
+                ):
+                    raise ValueError(
+                        "Continuation requires explicit walltime longer than pause_before"
+                    )
             self._save(
                 job=job_snapshot.dumps(payload),
                 task_count=len(payload.args) if is_array else 1,
@@ -152,6 +177,7 @@ class ClusterWorkUnit(xm.WorkUnit):
                 project=self.experiment._project,
                 outputs=json.loads(self._record.get("outputs") or "{}"),
                 inputs=json.loads(self._record.get("inputs") or "{}"),
+                continuation=policy,
             )
             self._ingest_handles(launch_result)
         except Exception as error:
@@ -227,13 +253,17 @@ class ClusterWorkUnit(xm.WorkUnit):
             return
         if record["backend"] != "slurm":
             raise NotImplementedError("Cancellation is supported only for Slurm")
+        if record.get("execution_directory"):
+            inspection.request_stop(record)
+            record = inspection.execution_record(record)
         # For Slurm these fields record intent, never evidence of termination.
         self._save(
             state="failed" if mark_as_failed else "stopped", message=message or ""
         )
-        slurm.SlurmCluster(inspection._hostname(record), record["username"]).cancel(
-            record["native_id"], record["job_name"]
-        )
+        if record["native_id"]:
+            slurm.SlurmCluster(inspection._hostname(record), record["username"]).cancel(
+                record["native_id"], record["job_name"]
+            )
 
     async def _wait_until_complete(self) -> None:
         if self._local_handles:
@@ -261,7 +291,21 @@ class ClusterWorkUnit(xm.WorkUnit):
     def _record(self):
         return self.experiment._catalog.work_unit(self.experiment_id, self.work_unit_id)
 
-    async def wait_for_local_jobs(self, is_exit_abrupt: bool):
+    async def wait_for_attached_jobs(self, is_exit_abrupt: bool):
+        attached = [
+            handle
+            for handle in self._non_local_handles
+            if isinstance(handle, slurm_execution.AttachedHandle)
+        ]
+        if attached and is_exit_abrupt:
+            self.stop()
+        for handle in attached:
+            result = await asyncio.gather(
+                asyncio.shield(asyncio.wrap_future(handle.future)),
+                return_exceptions=True,
+            )
+            if not is_exit_abrupt and isinstance(result[0], BaseException):
+                raise result[0]
         if self._local_handles and not is_exit_abrupt:
             results = await asyncio.gather(
                 *[handle.wait() for handle in self._local_handles],
@@ -346,15 +390,23 @@ class ClusterExperiment(xm.Experiment):
         identity="",
         outputs: Optional[Mapping[str, str]] = None,
         inputs: Optional[Mapping[str, output_lib.Artifact]] = None,
+        continuation: Optional[Continuation] = None,
     ):
         """Add one payload with optional retained outputs and same-site input artifacts."""
         declared = output_lib.declarations(outputs)
         bindings = input_lib.declarations(inputs)
-        if not declared and not bindings:
+        policy = asdict(continuation) if continuation is not None else None
+        if policy is not None and policy["checkpoint"] not in declared:
+            raise ValueError("Continuation checkpoint must name a declared output")
+        if not declared and not bindings and policy is None:
             return super().add(job, args, role=role, identity=identity)
 
         async def with_artifacts(unit, **overrides):
-            unit._save(outputs=json.dumps(declared), inputs=json.dumps(bindings))
+            unit._save(
+                outputs=json.dumps(declared),
+                inputs=json.dumps(bindings),
+                continuation=json.dumps(policy) if policy else None,
+            )
             await unit.add(job, overrides or None)
 
         role = job.role if isinstance(job, xm.AuxiliaryUnitJob) else role
@@ -397,18 +449,31 @@ class ClusterExperiment(xm.Experiment):
         future.set_result(experiment_unit)
         return future
 
-    def _wait_for_local_jobs(self, is_exit_abrupt: bool):
+    def _wait_for_attached_jobs(self, is_exit_abrupt: bool):
         if self._work_units:
             if any(wu._local_handles for wu in self._work_units.values()):
                 console.info("Waiting for local jobs to complete.")
         for unit in self._work_units.values():
-            self._create_task(unit.wait_for_local_jobs(is_exit_abrupt))
+            self._create_task(unit.wait_for_attached_jobs(is_exit_abrupt))
+
+    def _stop_attached_jobs(self):
+        for unit in self._work_units.values():
+            if any(
+                isinstance(handle, slurm_execution.AttachedHandle)
+                and not handle.future.done()
+                for handle in unit._non_local_handles
+            ):
+                unit.stop()
 
     def __exit__(self, exc_type, exc_value, traceback):
         # Flush `.add` calls.
         try:
             self._wait_for_tasks()
-            self._wait_for_local_jobs(exc_value is not None)
+            self._wait_for_attached_jobs(exc_value is not None)
+            self._wait_for_tasks()
+        except BaseException:
+            self._stop_attached_jobs()
+            raise
         finally:
             super().__exit__(exc_type, exc_value, traceback)
 
@@ -416,7 +481,11 @@ class ClusterExperiment(xm.Experiment):
         # Flush `.add` calls.
         try:
             await self._await_for_tasks()
-            self._wait_for_local_jobs(exc_value is not None)
+            self._wait_for_attached_jobs(exc_value is not None)
+            await self._await_for_tasks()
+        except BaseException:
+            self._stop_attached_jobs()
+            raise
         finally:
             await super().__aexit__(exc_type, exc_value, traceback)
 

@@ -116,7 +116,11 @@ def _decode(value):
     cls = _TYPES[kind]
     fields = {key: _decode(item) for key, item in value["fields"].items()}
     result = cls(
-        **{field.alias: fields[field.name] for field in attr.fields(cls) if field.init}
+        **{
+            field.alias: fields[field.name]
+            for field in attr.fields(cls)
+            if field.init and field.name in fields
+        }
     )
     for field in attr.fields(cls):
         if not field.init:

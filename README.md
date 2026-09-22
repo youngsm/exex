@@ -42,11 +42,17 @@ the author host before submission; same-site inputs require no transfer.
 For tracking, [W&B helpers and task links](docs/wandb.md) return native W&B runs,
 record checkpoint lineage and expose URLs through `unit.get_links()`, including
 while running and after failure. Tracking remains optional.
+For bounded [cooperative continuation](docs/continuation.md), attach
+`Continuation(checkpoint=..., max_attempts=..., pause_before=...)` to `add()`.
+`Slurm(mode="sbatch")` requeues after a verified pause; `mode="salloc"` owns an
+attached sequence of allocations. Applications checkpoint at their own safe
+points using the two optional `lxm3.execution` helpers. No ML framework is required.
 
 The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
 are future work, not this slice's release requirements. Keyed submission, prepared
 executable lookup, Local cancellation, artifact publication, container image builds/imports,
-continuation and Vertex are not implemented.
+array continuation, borrowed allocations, manual resume/budget extension and
+Vertex are not implemented.
 See [implementation progress](docs/fork-plan.md#implementation-progress) and the
 [baseline record](docs/fork-baseline.md). The upstream documentation follows.
 Use this checkout for fork development; the PyPI installation command below refers

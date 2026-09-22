@@ -68,6 +68,7 @@ class Artifact:
 
 
 def artifacts(record, *, task=None):
+    record = inspection.execution_record(record)
     if task is None and record["task_count"] > 1:
         raise ValueError("Choose a zero-based task index for array artifacts")
     task = 0 if task is None else task

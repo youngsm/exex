@@ -193,6 +193,8 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         *,
         outputs=None,
         inputs=None,
+        continuation=None,
+        attached=False,
     ) -> str:
         executable = job.executable
         if not isinstance(executable, executables.AppBundle):
@@ -234,7 +236,12 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
             if num_array_tasks is not None
             else "0"
         )
-        link_directory = shlex.quote(os.path.join(job_log_dir, "links")) + f'/"{task}"'
+        managed = continuation is not None or attached
+        link_directory = (
+            '"$LXM_ATTEMPT_DIR/links/0"'
+            if managed
+            else shlex.quote(os.path.join(job_log_dir, "links")) + f'/"{task}"'
+        )
         link_path = (
             shlex.quote("/run/lxm3/links/links.json")
             if image_type
@@ -247,24 +254,58 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         install_cmds += (
             f'\nLXM_LINK_DIR={link_directory}\nmkdir -p -- "$LXM_LINK_DIR"\n'
         )
+        if managed:
+            # Shifter keeps host paths but may clear the inherited environment.
+            # Freeze the attempt path into the parameter script after user env.
+            install_cmds += """python3 - "$LXM_WORKDIR/job-param.sh" "$LXM_ATTEMPT_DIR" <<'LXM_ATTEMPT_ENV'
+import shlex, sys
+with open(sys.argv[1], "a") as stream:
+    stream.write("\\nexport LXM_ATTEMPT_DIR=" + shlex.quote(sys.argv[2]) + "\\n")
+LXM_ATTEMPT_ENV
+"""
         link_export = shlex.quote(f"export LXM_LINKS_FILE={link_path}")
         install_cmds += (
             f'''printf '%s\\n' {link_export} >> "$LXM_WORKDIR/job-param.sh"'''
         )
+        if continuation is not None:
+            for variable, name in (
+                ("LXM_PAUSE_REQUEST", "pause-request"),
+                ("LXM_PAUSE_READY", "paused"),
+            ):
+                path = link_path.rsplit("/", 1)[0] + "/" + name
+                line = shlex.quote(f"export {variable}={path}")
+                install_cmds += (
+                    f'''\nprintf '%s\\n' {line} >> "$LXM_WORKDIR/job-param.sh"'''
+                )
         for kind, bindings in (("INPUT", inputs), ("OUTPUT", outputs)):
-            if bindings:
+            if bindings or (kind == "INPUT" and continuation is not None):
                 variable = f"LXM_{kind}_DIR"
                 install_cmds += f'\n{variable}="$(mktemp -d "$LXM_WORKDIR/lxm-{kind.lower()}.XXXXXXXXXX")"\n'
                 install_cmds += f'''printf '\\nexport {variable}="$PWD/%s"\\n' "${{{variable}##*/}}" >> "$LXM_WORKDIR/job-param.sh"'''
-        if inputs:
-            install_cmds += _artifact_command("prepare", '"$LXM_INPUT_DIR"', inputs)
+        if inputs or continuation is not None:
+            install_cmds += _artifact_command(
+                "prepare", '"$LXM_INPUT_DIR"', None if managed else inputs
+            )
         if outputs:
             destination = (
-                shlex.quote(os.path.join(job_log_dir, "artifacts")) + f'/"{task}"'
+                '"$LXM_ATTEMPT_DIR/artifacts/0"'
+                if managed
+                else shlex.quote(os.path.join(job_log_dir, "artifacts")) + f'/"{task}"'
             )
-            entrypoint_cmds += _artifact_command(
+            capture = _artifact_command(
                 "capture", f'"$LXM_OUTPUT_DIR" {destination}', outputs
             )
+            if continuation is not None:
+                checkpoint = continuation["checkpoint"]
+                entrypoint_cmds += '\nif test -e "$LXM_LINK_DIR/paused"; then\n'
+                entrypoint_cmds += _artifact_command(
+                    "capture",
+                    f'"$LXM_OUTPUT_DIR" {destination}',
+                    {checkpoint: outputs[checkpoint]},
+                )
+                entrypoint_cmds += "\nelse\n" + capture + "\nfi\n"
+            else:
+                entrypoint_cmds += capture
         workdir_cmds = 'LXM_WORKDIR="$(mktemp -d)"'
         workdir_root = getattr(executor, "workdir_root", None)
         if workdir_root is not None:
@@ -285,8 +326,13 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
 
 def _artifact_command(operation, paths, bindings):
     helper = Path(artifact_io.__file__).read_text()
+    bindings = (
+        shlex.quote(json.dumps(bindings))
+        if bindings is not None
+        else '"$LXM_ATTEMPT_INPUTS"'
+    )
     return (
-        f"\npython3 - {operation} {paths} {shlex.quote(json.dumps(bindings))} <<'LXM_ARTIFACT_PY'\n"
+        f"\npython3 - {operation} {paths} {bindings} <<'LXM_ARTIFACT_PY'\n"
         + helper
         + "\nLXM_ARTIFACT_PY\n"
     )

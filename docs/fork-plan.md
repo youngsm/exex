@@ -215,6 +215,14 @@ including rank-local restored state and the exact subsequent trajectory.
 This qualifies the fixed-world-size, single-node synthetic probe with AMP and
 data-loader workers disabled, not multi-node/resharded or full SSL continuation.
 
+The subsequent [cooperative Slurm continuation slice](continuation.md) adds the
+approved `Slurm(mode=...)`, `Continuation` policy and two worker helpers. Live
+S3DF/Singularity and S3DF-to-NERSC/Shifter probes cover native batch requeue,
+attached allocation chaining, and cancellation without starting another attempt.
+The standard-library counter restores retained state under one WorkUnit; this
+does not replace the application-level training qualification above. Full
+regressions: 625 passed, 2 upstream integration tests deselected. Pimm is unchanged.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its
@@ -387,6 +395,12 @@ for initial HPC training; general builders are not a prerequisite.
 
 ## 6. Qualify distributed Slurm; add allocation ownership separately
 
+The approved minimal owned-allocation API is now
+[`Slurm(mode="sbatch" | "salloc")`](continuation.md). The attached mode runs a
+single entrypoint through `srun` and holds the experiment context open, including
+bounded continuation. No separate public allocation/session class was added.
+Borrowed allocations remain separate future work.
+
 - Native node/task resources describe the allocation; the batch entrypoint runs
   once. With an explicitly shared `workdir_root`, that entrypoint can use `srun`
   to launch workers against the single unpacked source tree. This path is qualified;
@@ -409,6 +423,14 @@ owned sessions release their allocations. No standing allocation, placement reso
 or implicit scron/supervisor installation.
 
 ## 7. Add checkpoint continuation; keep scientific policy in pimm
+
+The implemented first slice is [cooperative continuation](continuation.md):
+`Continuation` on `Experiment.add`, existing input/output artifact bindings, and
+`execution.pause_requested()` / `execution.mark_paused()`. It deliberately does
+not add the larger execution-context/startup-acknowledgment API below. Same-site
+batch requeue and attached allocation chaining share the checkpoint contract.
+Manual `resume()`, budget extension and array continuation remain unimplemented;
+they are not prerequisites for replacing pimm's allocation/chaining loop.
 
 - A small execution context supplies restored-input paths, startup acknowledgment,
   immutable checkpoint publication and cooperative pause. Add explicit
