@@ -1,307 +1,56 @@
-# LXM3: XManager launch backend for HPC clusters
+# exex
 
-## Fork status
+Run experiments locally or on Slurm, using explicit execution targets and
+reusable environments. Package the code you have—including uncommitted changes—
+then inspect jobs, retain outputs, and pass checkpoints to subsequent jobs.
 
-This is the `youngsm/lxm3` fork of `ethanluoyc/lxm3`. The current release boundary is
-the [minimal HPC launcher](docs/minimal-hpc-slice.md): existing launch/packaging APIs,
-explicit sites, system OpenSSH for Slurm, reliable package staging and ordinary
-subprocess failures. Start with the runnable [HPC probe](examples/hpc/launch.py).
-Local stdout/stderr go to the printed log path. Applications can use their own
-output paths or opt into [retained outputs](docs/outputs.md) with
-`experiment.add(..., outputs=...)`, `unit.artifacts()` and `artifact.fetch(...)`.
-`Local(workdir_root=...)` and `Slurm(workdir_root=...)` choose the execution-host
-parent for temporary unpacked source; see [working directories](docs/minimal-hpc-slice.md#working-directories).
-For native multi-node execution, the [Slurm step example](examples/slurm_step/README.md)
-launches two workers with an ordinary `srun` entrypoint and tests failure propagation.
-Prebuilt-container examples cover [SIF execution](examples/sif/README.md) and
-[native Shifter composition](docs/shifter-slice.md), with separate qualification records.
-The [ShifterContainer API](docs/shifter-container.md) wraps one packaged entrypoint
-in an already-installed site image, with explicit bind mounts and Shifter modules.
-Executors take one `container_options` keyword accepting `SingularityOptions`,
-`DockerOptions`, `ShifterOptions` or `None`, matching the executable's runtime.
-For dirty-checkout iteration, [SourceTree and experiment.freeze()](docs/source-capture.md)
-capture raw files without a build or installation and reuse them after the checkout
-changes or disappears. The [source probe](examples/source/launch.py) demonstrates this.
-For later inspection, [get_experiment(), status and logs](docs/inspection.md) reopen
-saved WorkUnits without replaying the launcher. Local final outcomes and native
-Slurm accounting are supported. [WorkUnit control](docs/control.md) adds native
-Slurm `stop()` and Local/Slurm `wait_until_complete()`, including after reopening.
-`experiment.sources()` retrieves retained source, and a retrieved experiment can
-[accept new independent jobs](docs/source-capture.md#retrieve-and-add-another-run)
-without the original checkout or launcher.
-The [management CLI](docs/inspection.md#command-line) exposes `lxm3 experiments`,
-`status`, `logs`, `script` and `stop` against that same catalog. `list_experiments()` provides
-metadata-only discovery in Python; no scheduler connection is needed to list runs.
-[WorkUnit history](docs/inspection.md#concrete-job-history) exposes `unit.job`,
-`unit.source` and `unit.get_script()`: the concrete request and its saved script,
-without replaying a launcher. History does not imply hermetic reproducibility.
-For producer-to-consumer workflows, [input bindings](docs/inputs.md) make retained
-artifacts available beneath `LXM_INPUT_DIR` through `add(..., inputs=...)`.
-Each task receives verified private copies. Cross-site inputs are staged through
-the author host before submission; same-site inputs require no transfer.
-For tracking, [W&B helpers and task links](docs/wandb.md) return native W&B runs,
-record checkpoint lineage and expose URLs through `unit.get_links()`, including
-while running and after failure. Tracking remains optional.
-For bounded [cooperative continuation](docs/continuation.md), attach
-`Continuation(checkpoint=..., max_attempts=..., pause_before=...)` to `add()`.
-`Slurm(mode="sbatch")` requeues after a verified pause; `mode="salloc"` owns an
-attached sequence of allocations. Applications checkpoint at their own safe
-points using the two optional `lxm3.execution` helpers. No ML framework is required.
+Exex launches processes. It does not depend on PyTorch, TensorFlow, JAX, or a
+particular training loop, and it does not choose a cluster for you.
 
-The broader [fork plan](docs/fork-plan.md) and [API proposal](docs/fork-api-proposal.md)
-are future work, not this slice's release requirements. Keyed submission, prepared
-executable lookup, Local cancellation, artifact publication, container image builds/imports,
-array continuation, borrowed allocations, manual resume/budget extension and
-Vertex are not implemented.
-See [implementation progress](docs/fork-plan.md#implementation-progress) and the
-[baseline record](docs/fork-baseline.md). The upstream documentation follows.
-Use this checkout for fork development; the PyPI installation command below refers
-to the upstream distribution.
-[![PyPI version](https://badge.fury.io/py/lxm3.svg)](https://badge.fury.io/py/lxm3)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/lxm3)
-![Read the Docs](https://img.shields.io/readthedocs/lxm3)
-[![pdm-managed](https://img.shields.io/badge/pdm-managed-blueviolet)](https://pdm-project.org)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+## Get started
 
-<img src="https://raw.githubusercontent.com/ethanluoyc/lxm3/main/docs/logo.png" alt="logo created by GPT-4" style="width:400px;"/>
+Requires Python 3.10–3.12 on the authoring host. Install this repository; there
+is no exex PyPI release for this implementation yet.
 
-lxm3 provides an implementation for DeepMind's [XManager](https://github.com/deepmind/xmanager/tree/main) launch API that aims to provide a similar experience for running experiments on traditional HPC. It provides a local execution backend and support for the [SGE](https://en.wikipedia.org/wiki/Oracle_Grid_Engine) and [Slurm](https://slurm.schedmd.com/) schedulers.
-
-## Installation
-For running on a cluster, you should install Singularity and rsync before using lxm3.
-It may be possible to run on the cluster without Singularity, but that path
-was not tested thoroughly.
-
-You can install lxm3 from PyPI by running.
 ```bash
-pip install lxm3
+git clone https://github.com/youngsm/exex.git
+cd exex
+python -m pip install -e .
+exex launch examples/quickstart/launch.py
+exex experiments
 ```
-You can also install from GitHub for the latest features.
+
+The example runs a standard-library Python worker locally, retains its output,
+and prints the experiment ID. Local execution needs no cluster configuration.
+Use a prepared Python environment or a prebuilt container for your own workload;
+packaging source does not install application dependencies on compute nodes.
+
+For Slurm, configure a named site once, then use the same example:
+
 ```bash
-# Consider pinning to a specific commit/tag.
-pip install git+https://github.com/ethanluoyc/lxm3
+exex launch examples/quickstart/launch.py -- \
+  --cluster=mycluster --resource=account=my-account --walltime=300
 ```
 
-## Prerequisites
+See [getting started](docs/getting-started.md) for the complete Python example
+and [cluster configuration](docs/configuration.md) for SSH and storage setup.
 
-### Set up configuration file (required)
-You should create a configuration file for setting up credentials and storage location
-for your cluster. In addition, the configuration file is also required to specify the
-storage location for the local executor.
+## Guides
 
-Create a configuration file at `$XDG_CONFIG_HOME/lxm3/config.toml` (defaults to `~/.config/lxm3/config.toml`) with the following content:
+- [Source and containers](docs/packaging.md): dirty checkouts, existing SIF and Shifter images.
+- [Job inspection](docs/inspection.md): status, logs, cancellation, and reopening experiments.
+- [Artifacts](docs/artifacts.md): retained outputs, input bindings, and cross-site transfer.
+- [Continuation](docs/continuation.md): checkpoint-aware batch requeue and attached `salloc` chains.
+- [Weights & Biases](docs/wandb.md): native runs, history policy, and task links.
+- [API reference](docs/api.rst).
 
-```toml
-# Configuration for running in local mode.
-[local]
-[local.storage]
-# Configuration to lxm3 to stage local artifacts.
-staging = "~/.cache/lxm3"
+Local and Slurm are the maintained execution paths. Slurm uses your system
+OpenSSH configuration; Singularity/Apptainer and Shifter use existing runtimes.
+Cloud execution, automatic placement, and background recovery
+services are not implemented. See each guide for its supported scope.
 
-# Configuration for running on clusters. Omit if you are only using local mode.
-[[clusters]]
-# Set a name for this cluster, e.g., "cs"
-name = "<TODO>"
-# For Slurm, use your system OpenSSH alias. Omit server for on-site submission.
-# Authentication and jump hosts belong in ~/.ssh/config, not this TOML file.
-server = "<TODO>"
-# Fill in the username you use for this cluster.
-user = "<TODO>"
-# The following Paramiko options apply only to GridEngine, not Slurm.
-# Uncomment and update the line below if you would like to use a private key file ssh.
-# ssh_private_key = "~/.ssh/<private key name>"
-# Uncomment and update the line below if you would like to use a password for ssh.
-# password = "<password>"
-# Uncomment and update the line below if you need to connect to the cluster
-# via a jump server. This corresponds to the proxycommand option in ssh_config.
-# proxycommand = ""
+## Contributing
 
-[clusters.storage]
-# Replace with the path to a staging directory on the cluster. lxm3 uses this directory for storing all files required to run your job.
-# This should be an absolute directory and should not be a symlink
-staging = "<absolute path to your home directory>/lxm3-staging"
-
-```
-
-### Install Singularity/Apptainer (optional)
-If you use the `SingularityContainer` executable, you should install Singularity/Apptainer
-on your machine. Your cluster should have installed Singularity/Apptainer on your HPC cluster as well.
-Follow the instructions on the [singularity website](https://docs.sylabs.io/guides/4.1/admin-guide/installation.html) or [apptainer website](https://apptainer.org/docs/admin/latest/installation.html) to install Singularity/Apptainer respectively. Currently, lxm3
-supports Apptainer via the singularity symlink.
-
-### Install Docker (optional)
-We recommend installing Docker as well even though you are using Singularity/Apptainer.
-This would allow your to use Docker's build cache to speed up the build process. An experimental
-`DockerContainer` is also provided for running jobs with Docker.
-
-## Writing lxm3 launch scripts
-At a high level you can launch experiment by creating a launch script
-called `launcher.py` that looks like:
-
-```python
-# Create an experiment and acquite its context
-with xm_cluster.create_experiment(experiment_title="hello world") as experiment:
-
-    # Define an specification for the executable you want to run
-    spec = xm_cluster.PythonPackage(
-       path=".",
-       entrypoint=xm_cluster.ModuleName("my_package.main"),
-    )
-
-    # Define an executor for the executable
-    # To launch locally
-    executor = xm_cluster.Local()
-    # or, if you want to use SGE:
-    # executor = xm_cluster.GridEngine()
-    # or, if you want to run on a Slurm cluster:
-    executor = xm_cluster.Slurm()
-
-    # package your code
-    [executable] = experiment.package(
-        [xm.Packageable(spec, executor_spec=executor.Spec())]
-    )
-
-    # add jobs to your experiment
-    experiment.add(
-        xm.Job(executable=executable, executor=executor)
-    )
-```
-and launch the experimet from the command line with
-```python
-lxm3 launch launcher.py
-```
-
-Many things happen under the hood. Since lxm3 implements the XManager
-API, you should get familiar with the concepts in the
-[XManager](https://github.com/deepmind/xmanager). Once you are
-familiar with the concepts, checkout the [examples/](examples/)
-directory for a quick start guide.
-
-
-## Components
-lxm3 provides the following executable specification and executors.
-
-### Executable specifications
-| Name      | Description |
-| ----------- | ----------- |
-| `lxm3.xm_cluster.PythonPackage`      | A python application packageable with pip |
-| `lxm3.xm_cluster.UniversalPackage`      | A universal package |
-| `lxm3.xm_cluster.SingularityContainer` | An executable running with Singularity |
-
-### Executors
-| Name      | Description |
-| ----------- | ----------- |
-| `lxm3.xm_cluster.Local`     | Runs a executable locally, mainly used for testing |
-| `lxm3.xm_cluster.GridEngine`     | Runs a executable on SGE cluster |
-| `lxm3.xm_cluster.Slurm`     | Runs a executable on Slurm cluster |
-
-### Jobs
-* Currently, only `xm.Job` and `xm.JobGenerator` that generates `xm.Job` are supported.
-* We support HPC array jobs via `xm_cluster.ArrayJob`. See below.
-
-## Implementation Details
-### __Managing Dependencies with Containers__
-lxm3 uses of Singularity containers for running jobs on HPCs.
-
-lxm3 aims at providing a easy workflow for launching jobs on traditional HPC clusters,
-which deviates from typical workflows for launching experiments on Cloud platforms.
-
-lxm3 is designed for working with containerized applications using [Singularity](https://docs.sylabs.io/guides/3.5/user-guide/introduction.html) as the runtime.
-Singularity is a popular choice for HPC clusters because it allows users to run containers without requiring root privileges, and is supported by many HPC clusters worldwide.
-
-There are many benefits to using containers for running jobs on HPCs compared to traditional isolation via `venv` or `conda`.
-
-1. `venv` and `conda` are laid out as a directory of files on the environment. For many
-HPCs, normally these will be installed on a networked filesystem such as NFS. Operations
-on these virtual environments are slow and inefficient. For example, on our cluster, removing
-a `conda` environment with many dependencies can take an hour when these environments are
-on NFS. There are usually quota put in places not only for the file sizes but also the number of files.
-For ML projects that uses depends on many (large) packages such as TensorFlow, PyTorch, it is very easy
-to hit the quota limit. Singularity containers are a single file. This is both easy
-for deployment and also avoids the file number quota.
-2. Containers provide consistent environment for running jobs on different clusters as well as making it easy to use system dependencies not installed on HPC's host environment.
-
-### __Automated Deployment__.
-HPC deployments normally use a filesystem that are detached from the filesystems of the user's workstation.
-Many tutorials for running jobs on HPCs request the users to either clone their repository on the login node or ask the users manually copy files to the cluster. Doing this repeatedly is tedious. lxm3 automates the deployments from your workstation to the HPC cluster so that you can do most of your work locally without having
-directly login into the cluster.
-
-Unlike Docker or other OCI images that are composed of multiple layers,
-the Singularity Image Format (SIF) used by Singularity is a single file that contains the entire filesystem of the container. While this is convenient as deployment to a remote cluster can be performed with a single `scp/rsync` command. The lack of layer caching/sharing makes repeated deployments slow and inefficient.
-For this reason, unlike typical cloud deployments where the application and dependencies are packaged into a single image, lxm3 uses a two-stage packaging process to separate the application and dependencies.
-This allows applications with heavy dependencies to be packaged once and reused across multiple experiments by reusing the same singularity container.
-
-For Python applications, we rely on the user to first build a runtime image for all of the dependencies and use [standard Python pacakging](https://packaging.python.org/en/latest/tutorials/packaging-projects/) tools to create a distribution that is deployed separately to the cluster.
-Concretely, the user is expected to create a simple `pyproject.toml` which describes how to create a distribution for their applications.
-This is convenient, as lxm3 does not have to invent a custom packaging format for Python applications. For example, a simple `pyproject.toml` that uses `hatchling` as the build backend looks like:
-```toml
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
-name = "py_package"
-authors = [{ name = "Joe" }]
-version = "0.1.0"
-```
-lxm3 uses `pip install --no-deps` to create a zip archive that contains all of your application code.
-In addition to the packaging, lxm3 also allows you to carry extra files for your deployment via
-`xm_cluster.Fileset`. This is for example useful if you want to deploy configuration files.
-
-The zip archive is automatically extracted into a temporary directory on the cluster and executed from there.
-Using a zip archive again minimizes the number of files that are deployed to the cluster so that you are
-less likely to hit a file number limit.
-
-If you are using a different language or you cannot package your python application easily
-with standard Python packaging tools, you can use `xm_cluster.UniversalPackage` to package your application.
-
-### __Easy Hyperparameter Sweeping__.
-For many scientific research projects, it's common to run the same experiment with different hyperparameters. lxm3 automatically generates jobs scripts that can be submitted to the cluster's scheduler for running multiple experiments with different hyperparameters passed as differnt command line arguments or environment variables.
-
-For large parameter sweep, launching many separate jobs at once can
-overwhelm the scheduler. For this reason, HPC schedulers encourage the
-use of job arrays to submit sweeps. lxm3 provide a `ArrayJob`
-xm.JobConfig that allows you to submit multiple jobs with the same
-executable and job requirements but different hyperparameters as a
-single job array.
-
-For example:
-```python
-from lxm3 import xm
-from lxm3 import xm_cluster
-with xm_cluster.create_experiment() as experiment:
-    executable = ...
-    executor = ...
-    parameters = [{"seed": seed} for seed in range(5)]
-    experiment.add(
-        xm_cluster.ArrayJob(executable=executable, executor=executor, args=parameters)
-    )
-```
-This will be translated as passing `--seed {0..4}` to your executable. We
-also support customzing environment variables, which is convenient for example if you
-use [Weights and Biases](https://wandb.ai/site) where you can configure run names and groups
-from environment variables (TODO(yl): migrate examples for configuring wandb).
-
-There is a lot of flexibility on how to create the `args` for each job.
-For example, you can use `itertools.product` to create a cartesian product of all the hyperparameters.
-You can create arbitrary sweeps in pure python without resorting to a DSL.
-
-Under the hood, lxm3 automatically generates job scripts that map from the array job index
-to command line arguments and environment variables.
-
-### __Separate experiment launching from your application__.
-Similar to the design of XManager, lxm3 separates the launching of experiments from your application
-so that you are not bound to a specific experiment framework.
-You can develop your project with your favorite framework without having your application
-code be aware of the existence of lxm3. In fact, we recommend that you install lxm3
-as a development dependency that are not bundled with your dependencies used at runtime.
-You can also install lxm3 globally or in its own virtual environment via `pex` or `pipx`.
-
-### Notes for existing Xmanager users
-
-1. We vendored a copy of xmanager core API (v0.4.0) into lxm3 with
-light modification to support Python 3.9. This also allows us to just use the launch API
-without `xm_local`'s dependencies. Thus, you should import the core API as
-`from lxm3 import xm` instead of `from xmanager import xm`. Our executables specs
-are defined in `xm_cluster` instead `xm` as we do not support the executable specs
-from the core API.
+Read the [contributor guide](CONTRIBUTING.md) for tests and the source layout.
+Exex is derived from [LXM3](https://github.com/ethanluoyc/lxm3) and includes
+vendored XManager components; see [attribution](NOTICE.md).

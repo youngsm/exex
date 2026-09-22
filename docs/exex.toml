@@ -1,0 +1,9 @@
+[local.storage]
+staging = ".exex"
+
+[[clusters]]
+name = "mycluster"
+server = "my-ssh-alias"
+
+[clusters.storage]
+staging = "/shared/cluster/exex"

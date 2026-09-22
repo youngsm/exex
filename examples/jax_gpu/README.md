@@ -100,7 +100,7 @@ exex --help
 ```
 
 ### 2.2 Set up a configuration file for exex
-Put the following content in a file called `lxm.toml`:
+Put the following content in a file called `exex.toml`:
 ```toml
 project = "" # Optional project name
 # Configuration for running in local mode.
@@ -134,7 +134,7 @@ Before explaining the details, let's just run the example and see what happens.
 #### Running locally
 Let's first try running the example locally.
 ```bash
-exex launch launcher.py -- --exex_config lxm.toml
+exex launch launcher.py -- --exex_config exex.toml
 ```
 
 #### Running on the cluster
@@ -145,10 +145,10 @@ make it work on a different cluster._
 
 Now let's try running the example on the cluster.
 ```bash
-exex launch launcher.py -- --exex_config lxm.toml --launch_on_cluster
+exex launch launcher.py -- --exex_config exex.toml --launch_on_cluster
 ```
 
 ### 2.4 Run a batch job
 ```bash
-exex launch batch_launcher.py -- --exex_config lxm.toml --launch_on_cluster
+exex launch batch_launcher.py -- --exex_config exex.toml --launch_on_cluster
 ```

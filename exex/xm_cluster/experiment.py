@@ -531,7 +531,8 @@ def create_experiment(
     *,
     config: Optional[config_lib.Config] = None,
 ) -> ClusterExperiment:
-    """Create a Exex experiment backed by the xm_cluster backend.
+    """Create an exex experiment backed by the xm_cluster backend.
+
     Args:
         experiment_title: Title of the experiment.
         project: project that the experiment is launched in.
