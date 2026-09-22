@@ -1,6 +1,6 @@
 # LXM3 fork: implementation delta
 
-Status: W&B helpers and task links, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
+Status: cross-site artifact inputs, 2026-09-21. Fork: [youngsm/lxm3](https://github.com/youngsm/lxm3).
 Upstream: [ethanluoyc/lxm3](https://github.com/ethanluoyc/lxm3), commit
 `30f55855e595ee7d8397daacb1475442265f37ef`. The
 [API proposal](fork-api-proposal.md) defines the broader method-level changes.
@@ -192,6 +192,21 @@ No worker database connection, scheduler import, ML framework dependency, metric
 writer, retry policy, continuation or pimm migration is added. W&B's SDK is an
 optional extra. The linked documentation records tests and live qualifications;
 the broader online-history and pimm migration gates in section 8 remain separate.
+
+The [cross-site input slice](inputs.md) extends the existing `add(..., inputs=...)`
+contract without new public methods or catalog fields. Foreign archives stage
+through the author host into destination content-addressed storage before native
+submission; same-endpoint bindings retain their no-transfer path. The catalog
+keeps the original producer reference and the script keeps effective staged paths.
+Transfers reuse OpenSSH and temporary-upload/rename primitives, with ordinary
+errors, no retry or service, and runtime identity verification before extraction.
+This supports explicit new consumer WorkUnits. Same-WorkUnit attempts, automatic
+continuation, requeue, salloc ownership and changing training topology remain
+separate work; this slice does not implement them.
+All four same-site/cross-site S3DF/NERSC checkpoint continuation paths passed
+live GPU qualification against uninterrupted references, with W&B histories
+checked independently. Full regressions: 600 passed, 2 upstream integration
+tests deselected. See the linked evidence for scope and job IDs.
 
 ## Decision and scope
 

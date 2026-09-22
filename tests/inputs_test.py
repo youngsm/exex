@@ -1,4 +1,4 @@
-"""Consumers use verified private copies of same-site retained artifacts."""
+"""Consumers use verified private copies of retained artifacts across sites."""
 
 import asyncio
 import getpass
@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from fsspec.implementations.local import LocalFileSystem
 
 from lxm3 import xm
 from lxm3 import xm_cluster as xc
@@ -255,30 +256,105 @@ def test_same_endpoint_is_explicit(
     value = xc.Artifact(
         artifact.id, artifact._archive_path, producer_host, producer_user
     )
-    bindings = inputs.declarations({"checkpoint": value})
-    config._data["clusters"][0].update(server=consumer_host, user=consumer_user)
-    if allowed:
-        inputs.check_site(bindings, xc.Slurm(cluster="site"), config)
-    else:
-        with pytest.raises(ValueError, match="same host/user endpoint"):
-            inputs.check_site(bindings, xc.Slurm(cluster="site"), config)
+    binding = inputs.declarations({"checkpoint": value})["checkpoint"]
+    endpoint = inputs._endpoint(consumer_host, consumer_user if consumer_host else None)
+    assert ({key: binding[key] for key in endpoint} == endpoint) == allowed
 
 
-def test_cross_site_rejected_before_scheduler_or_transfer(config, tmp_path, artifact):
+@pytest.mark.parametrize("failure", ["download", "digest", "upload"])
+def test_cross_site_errors_prevent_submission(config, tmp_path, artifact, failure):
     foreign = xc.Artifact(artifact.id, artifact._archive_path, "nersc", "sam")
     experiment = xc.create_experiment("cross-site", config=config)
     executor = xc.Slurm(cluster="site")
     executable = package(experiment, tmp_path, ["true"], executor)
-    with mock.patch.object(native_slurm.SlurmCluster, "launch") as submission:
-        with mock.patch.object(
-            ssh, "run", side_effect=AssertionError("Unexpected SSH")
-        ):
-            with pytest.raises(ValueError, match="cross-site"):
+    if failure == "digest":
+        Path(artifact._archive_path).write_bytes(b"bad archive")
+    with mock.patch.object(ssh, "OpenSSHFileSystem", return_value=LocalFileSystem()):
+        with mock.patch.object(native_slurm.SlurmCluster, "launch") as submission:
+            download = LocalFileSystem.get_file
+            upload = inputs.job_script_builder.artifacts.ArtifactStore.put_file
+            with (
+                mock.patch.object(
+                    LocalFileSystem,
+                    "get_file",
+                    autospec=True,
+                    side_effect=OSError("disconnected")
+                    if failure == "download"
+                    else download,
+                ),
+                mock.patch.object(
+                    inputs.job_script_builder.artifacts.ArtifactStore,
+                    "put_file",
+                    autospec=True,
+                    side_effect=OSError("disconnected")
+                    if failure == "upload"
+                    else upload,
+                ),
+                pytest.raises((OSError, ValueError)),
+            ):
                 with experiment:
                     experiment.add(
                         xm.Job(executable, executor), inputs={"checkpoint": foreign}
                     )
     submission.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "source_host,target_host",
+    [(None, "target"), ("source", None), ("source", "target")],
+)
+def test_cross_site_staging_preserves_identity_and_reuses_destination(
+    config, tmp_path, artifact, source_host, target_host
+):
+    config._data["clusters"][0].update(server=target_host)
+    executor = xc.Slurm(cluster="site") if target_host else xc.Local()
+    original = inputs.declarations(
+        {"checkpoint": xc.Artifact(artifact.id, artifact._archive_path, source_host)}
+    )
+    filesystem = LocalFileSystem()
+    filesystem.abspath = os.path.abspath
+    with (
+        mock.patch.object(ssh, "OpenSSHFileSystem", return_value=filesystem),
+        mock.patch.object(
+            inputs.job_script_builder, "OpenSSHFileSystem", return_value=filesystem
+        ),
+        mock.patch.object(filesystem, "put_file", wraps=filesystem.put_file) as upload,
+    ):
+        staged = inputs.stage(original, executor, config, "consumer")
+        assert staged["checkpoint"]["id"] == artifact.id
+        assert staged["checkpoint"]["archive_path"] != artifact._archive_path
+        assert original["checkpoint"]["archive_path"] == artifact._archive_path
+        assert digest_file(staged["checkpoint"]["archive_path"]) == artifact.id
+        # A retained destination copy no longer needs the original endpoint.
+        Path(artifact._archive_path).unlink()
+        assert inputs.stage(original, executor, config, "consumer") == staged
+        assert upload.call_count == 1
+    root = tmp_path / "unpacked"
+    root.mkdir()
+    prepare(root, staged)
+    assert (root / "checkpoint/weights").read_text() == "original"
+
+
+def test_cross_site_local_execution_keeps_provenance(config, tmp_path, artifact):
+    foreign = xc.Artifact(artifact.id, artifact._archive_path, "source")
+    with mock.patch.object(ssh, "OpenSSHFileSystem", return_value=LocalFileSystem()):
+        with xc.create_experiment("transferred", config=config) as experiment:
+            executable = package(
+                experiment,
+                tmp_path,
+                ['cat "$LXM_INPUT_DIR/checkpoint/weights" > "$LXM_OUTPUT_DIR/result"'],
+            )
+            experiment.add(
+                xm.Job(executable, xc.Local()),
+                inputs={"checkpoint": foreign},
+                outputs={"result": "result"},
+            )
+    unit = xc.get_experiment(experiment.experiment_id, config=config).work_units()[1]
+    assert json.loads(unit._record["inputs"])["checkpoint"]["hostname"] == "source"
+    assert str(tmp_path / "store/inputs" / (artifact.id + ".tar")) in unit.get_script()
+    assert (
+        unit.artifacts()["result"].fetch(tmp_path / "result").read_text() == "original"
+    )
 
 
 @pytest.mark.parametrize(
@@ -384,3 +460,49 @@ def test_preparation_needs_only_stdlib_and_preserves_executable_files(tmp_path):
         [str(root / "program")], check=True, capture_output=True, text=True
     )
     assert result.stdout == "executable"
+
+
+def test_corrupt_staged_cache_is_checked_before_payload(config, tmp_path, artifact):
+    foreign = xc.Artifact(artifact.id, artifact._archive_path, "source")
+    with mock.patch.object(ssh, "OpenSSHFileSystem", return_value=LocalFileSystem()):
+        staged = inputs.stage(
+            inputs.declarations({"checkpoint": foreign}), xc.Local(), config, None
+        )
+        Path(staged["checkpoint"]["archive_path"]).write_bytes(
+            b"damaged after transfer"
+        )
+        marker = tmp_path / "payload-ran"
+        with pytest.raises(subprocess.CalledProcessError):
+            with xc.create_experiment("bad-cache", config=config) as experiment:
+                executable = package(
+                    experiment, tmp_path, [f"touch {shlex.quote(str(marker))}"]
+                )
+                experiment.add(
+                    xm.Job(executable, xc.Local()), inputs={"checkpoint": foreign}
+                )
+    assert not marker.exists()
+
+
+def test_interrupted_upload_never_exposes_final_archive(config, tmp_path, artifact):
+    config._data["clusters"][0].update(server="target")
+    filesystem = LocalFileSystem()
+    filesystem.abspath = os.path.abspath
+
+    def interrupted(local, remote):
+        Path(remote).write_bytes(b"partial upload")
+        raise OSError("disconnected")
+
+    with (
+        mock.patch.object(
+            inputs.job_script_builder, "OpenSSHFileSystem", return_value=filesystem
+        ),
+        mock.patch.object(filesystem, "put_file", side_effect=interrupted),
+        pytest.raises(OSError, match="disconnected"),
+    ):
+        inputs.stage(
+            inputs.declarations({"checkpoint": artifact}),
+            xc.Slurm(cluster="site"),
+            config,
+            None,
+        )
+    assert not (tmp_path / "site/inputs" / (artifact.id + ".tar")).exists()

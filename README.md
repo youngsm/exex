@@ -37,7 +37,8 @@ metadata-only discovery in Python; no scheduler connection is needed to list run
 without replaying a launcher. History does not imply hermetic reproducibility.
 For producer-to-consumer workflows, [input bindings](docs/inputs.md) make retained
 artifacts available beneath `LXM_INPUT_DIR` through `add(..., inputs=...)`.
-Each task receives verified private copies on the same execution endpoint.
+Each task receives verified private copies. Cross-site inputs are staged through
+the author host before submission; same-site inputs require no transfer.
 For tracking, [W&B helpers and task links](docs/wandb.md) return native W&B runs,
 record checkpoint lineage and expose URLs through `unit.get_links()`, including
 while running and after failure. Tracking remains optional.

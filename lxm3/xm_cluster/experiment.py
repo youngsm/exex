@@ -54,7 +54,6 @@ async def _launch(
     job_name = f"{experiment_title}_{work_unit_name}"
 
     for payload in job_script_builder.flatten_job(job):
-        input_lib.check_site(inputs, payload.executor, config)
         target = payload.executable._target
         if target is not None and target != _package_target(
             payload.executor.Spec(), config=config, project=project
@@ -62,6 +61,7 @@ async def _launch(
             raise ValueError(
                 "Executable was packaged for a different destination; package it for this executor and experiment."
             )
+        inputs = input_lib.stage(inputs, payload.executor, config, project)
 
     local_handles.extend(
         await local_execution.launch(

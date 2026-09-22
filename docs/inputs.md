@@ -1,9 +1,9 @@
 # Retained artifacts as inputs
 
-Bind a completed producer's artifacts to another WorkUnit on the same execution
-endpoint. The consumer gets private extracted copies before its entrypoint starts.
-No artifact download through the author machine, cross-site transfer, or worker
-LXM3 installation is involved.
+Bind a completed producer's artifacts to another WorkUnit on the same or a different
+execution endpoint. The consumer gets private extracted copies before its entrypoint
+starts. Cross-site archives are staged through the author host before submission;
+same-site inputs still require no transfer. Workers do not need LXM3 installed.
 
 ## API
 
@@ -46,8 +46,9 @@ not a transfer between execution sites. `--producer_task=0` selects an array tas
 
 The same launcher accepts `--target=s3df --runtime=singularity --image=PATH` or
 `--target=nersc --runtime=shifter --image=id:...`, along with repeated Slurm
-`--resource=key=value` and `--workdir_root=PATH`. The producer must be on the same
-endpoint, and the existing image must contain Python for this example worker.
+`--resource=key=value` and `--workdir_root=PATH`. Changing `--target` selects the
+consumer destination, including a different site from the producer. The existing
+image must contain Python for this example worker.
 No ML framework is required.
 
 ## Contract
@@ -59,10 +60,19 @@ No ML framework is required.
   current author host and its FQDN normalize to local execution; on-site Slurm
   uses the current user. Remote aliases and usernames must match explicitly.
   There is no alias/DNS-equivalence inference or shared-filesystem detection.
-- A cross-site binding fails before scheduler submission or input transfer.
-  The referenced archive must be visible at the same absolute path on execution
+- For same-site bindings, the archive must be visible at the same absolute path on execution
   nodes. Local producer output in node-local scratch is not automatically staged
   to Slurm nodes, even when submission originates on the same author host.
+- Cross-site bindings stage the original archive under the destination project's
+  `inputs/<sha256>.tar`, using the existing temporary-upload/rename path. A remote
+  source downloads to author-side temporary disk; a local source uploads directly.
+  Downloaded/source bytes are checked against the artifact ID before uploading.
+  An existing content-addressed destination is reused and checked by the worker,
+  like every input. Transfer errors propagate before submission, without retries.
+  The launcher needs access to both endpoints, temporary space for one remote
+  archive at a time, and destination staging space. Compute nodes need no SSH
+  credentials or connectivity to the producer. There is no background transfer,
+  direct site-to-site transport, automatic cache eviction or transfer recovery.
 - Immediately before execution, the host verifies each archive's SHA-256 identity
   and extracts it into a fresh private directory under the task's working directory.
   Only regular files/directories beneath the retained `data/` root are accepted;
@@ -84,9 +94,10 @@ No ML framework is required.
 ## Saved history and boundaries
 
 `work_units.inputs` is one nullable JSON column in the existing SQLite catalog:
-each input name records `id`, `archive_path`, `hostname` and `username`. These are
-frozen references, not copied artifacts. The generated submission script retains
-the same preparation instructions and can be inspected with `unit.get_script()`.
+each input name records the original `id`, `archive_path`, `hostname` and `username`.
+These frozen producer references preserve provenance. The generated submission
+script retains the effective execution-site paths (staged for foreign inputs),
+and can be inspected with `unit.get_script()`. No schema change is needed.
 `unit.job` remains the concrete XM Job/ArrayJob, not a new wrapper containing
 WorkUnit-level input/output policy. No new history accessor is added in this slice.
 
@@ -94,10 +105,12 @@ Existing catalogs acquire the nullable column when a new WorkUnit is created;
 read-only producer lookup does not migrate old catalogs. Entries without input
 declarations keep their previous behavior. Site scratch expiry/deletion still
 applies: an input reference does not extend the producer's retention lifetime.
+A successfully staged cross-site copy is independent of the producer thereafter;
+deleting that destination copy still breaks queued consumers that need it.
 
 This is a new consumer WorkUnit, not continuation of its producer. There is no
 automatic waiting for unfinished producers, retry, scheduler dependency, publication,
-cross-site transfer, or pimm change. Checkpoint interpretation stays with the
+or application-specific resume method. Checkpoint interpretation stays with the
 application: Torch, TensorFlow, JAX and non-ML programs receive ordinary paths.
 
 ## Qualification
@@ -142,5 +155,51 @@ NERSC staging:
 `/pscratch/sd/y/youngsam/lxm3-inputs-qualification-oDPMVL`.
 S3DF reused the existing SIF staging cache with unique new job paths.
 
-Final regressions: **559 passed, 2 upstream integration tests deselected**,
+At this initial same-site milestone: **559 passed, 2 upstream integration tests deselected**,
 including 34 new input cases. Changed Python files pass Ruff lint/format checks.
+
+### Cross-site transfer coverage
+
+The extended input suite covers local-to-remote, remote-to-local and
+remote-to-remote staging, original producer provenance, destination cache reuse,
+source identity mismatches, corrupted destination archives and interrupted
+uploads. Download, identity-check and upload failures prevent scheduler
+submission; corrupted cached bytes prevent the worker payload from running.
+Interrupted uploads do not expose a final content-addressed archive.
+
+Full fork regressions: **600 passed, 2 upstream integration tests deselected**,
+including 42 input cases. No new dependency, schema field or public method is
+required for cross-site inputs.
+
+### GPU checkpoint continuation, 2026-09-21
+
+Real pimm Trainer probes qualified new consumer allocations using the unchanged
+artifact API, with S3DF/Singularity and NERSC/Shifter:
+
+| Path | Producer job | Consumer job | Result |
+| --- | --- | --- | --- |
+| S3DF → S3DF | `38767095` | `38767218` | Completed, exact continuation |
+| NERSC → NERSC | `58730242` | `58730676` | Completed, exact continuation |
+| S3DF → NERSC | `38767095` | `58730387` | Completed, exact continuation |
+| NERSC → S3DF | `58730242` | `38767363` | Completed, exact continuation |
+
+Uninterrupted references were jobs `38767096` and `58730241`. The application
+checked restored model/optimizer/scheduler/scaler/dataloader/RNG state and
+progress, then exact subsequent samples, random draws, losses and final state.
+This is a tiny single-visible-GPU workload with AMP disabled and unchanged
+topology, not a general cross-version or multi-rank reproducibility guarantee.
+No training-framework dependency or resume logic was added to LXM3.
+
+A fresh author process reopened all eight WorkUnits, fetched their artifacts,
+rechecked producer hashes, source identity and input provenance, and verified
+W&B append/new/fork histories and links. Fork used existing organization
+permission; new and append did not need it. Evidence, the isolated launcher and
+verifier are retained under
+`/sdf/group/neutrino/youngsam/representations/lxm3-continuation.GEQapY`;
+remote staging is `/pscratch/sd/y/youngsam/lxm3-continuation-GEQapY`.
+The reusable application probe is pimm's
+`tests/fixtures/lxm3/artifact_continuation.py`.
+
+An SSH failure before scheduler submission and a later read-only SSH disconnect
+were explicitly retried by the operator. The library raised ordinary errors;
+no automatic retry or uncertain-submission machinery was added.
