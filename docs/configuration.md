@@ -39,8 +39,23 @@ Workers do not connect to the author's catalog.
 
 `Local(workdir_root=...)` and `Slurm(workdir_root=...)` select the execution-host
 parent for temporary unpacking. Multi-node entrypoints need a shared path. Exex
-runs the entrypoint once; your application can use `srun` or its framework's own
-launcher to start workers. Node-local replication is not automatic.
+runs the entrypoint once by default. To launch the packaged command (including
+its container) on multiple nodes, pass native `srun_options`:
+
+```python
+executor = xc.Slurm(
+    resources={"nodes": 2, "ntasks-per-node": 1, "gpus-per-node": 2},
+    workdir_root="/shared/cluster/work",
+    srun_options=["--nodes=2", "--ntasks=2", "--ntasks-per-node=1",
+                  "--kill-on-bad-exit=1", "--overlap"],
+)
+```
+
+Preparation and artifact capture run once; each task receives its own Slurm/GPU
+environment before entering its container. Native options choose placement and
+failure behavior. `--overlap` lets workers share resources with an attached
+continuation controller. With `srun_options=None`, application-owned launchers
+continue to work unchanged. Node-local replication is not automatic.
 
 SSH, submission and filesystem errors propagate normally. There is no automatic
 resubmission after a lost connection. Inspect the scheduler when submission

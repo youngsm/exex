@@ -31,6 +31,26 @@ class SlurmJobScriptBuilder(job_script_builder.JobScriptBuilder[executors.Slurm]
     JOB_SCRIPT_SHEBANG = "#!/usr/bin/bash -l"
     JOB_ENV_PATTERN = "^(SLURM_|CUDA_VISIBLE_DEVICES=)"
 
+    def _create_entrypoint_commands(self, job, install_dir):
+        options = job.executor.srun_options
+        if options is None:
+            return super()._create_entrypoint_commands(job, install_dir)
+        # Capture each task's environment after srun assigns its rank and GPUs.
+        # The shared controller environment must not overwrite those values.
+        worker = (
+            "EXEX_WORKDIR=$1\nEXEX_LINK_DIR=$2\n"
+            f'EXEX_ENV_FILE=$(mktemp "{install_dir}/.environment.XXXXXXXXXX")\n'
+            + self._create_environment_command(job, '"$EXEX_ENV_FILE"')
+            + "\n"
+            + super()._create_entrypoint_commands(
+                job, install_dir, env_file='"$EXEX_ENV_FILE"'
+            )
+        )
+        return (
+            shlex.join(["srun", *options, "bash", "-e", "-c", worker, "exex-worker"])
+            + f' "{install_dir}" "$EXEX_LINK_DIR"'
+        )
+
     @classmethod
     def _is_gpu_requested(cls, executor: executors.Slurm) -> bool:
         return any(

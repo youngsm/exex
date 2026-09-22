@@ -87,13 +87,9 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
         executable = job.executable
         assert isinstance(executable, executables.AppBundle)
         job_args_script = self._create_job_args_script(job)
-        if self.JOB_ENV_PATTERN:
-            export_env_file_cmds = (
-                f"printenv | {{ grep -E '{self.JOB_ENV_PATTERN}' || :; }} > "
-                f'"{install_dir}/.environment"'
-            )
-        else:
-            export_env_file_cmds = f'touch "{install_dir}/.environment"'
+        export_env_file_cmds = self._create_environment_command(
+            job, f'"{install_dir}/.environment"'
+        )
         extract_pkg_cmds = _get_extract_command(executable.resource_uri, install_dir)
         save_job_args_cmds = f"printf '%s\\n' {shlex.quote(job_args_script)} > \"{install_dir}/{self.JOB_PARAM_NAME}\""
         return "\n".join(
@@ -104,11 +100,26 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
             ]
         )
 
-    def _create_entrypoint_commands(self, job: JobType, install_dir: str) -> str:
+    def _create_environment_command(self, job: JobType, path: str) -> str:
+        image = job.executable.container_image
+        quote = image and image.image_type == executables.ContainerImageType.SINGULARITY
+        # Singularity evaluates shell assignments; Docker/Shifter read literal values.
+        value = "shlex.quote(value)" if quote else "value"
+        script = (
+            "import os, re, shlex; "
+            f"print(''.join(key + '=' + {value} + '\\n' "
+            f"for key, value in os.environ.items() if re.match({self.JOB_ENV_PATTERN or '(?!)'!r}, key + '=')), end='')"
+        )
+        return shlex.join(["python3", "-c", script]) + f" > {path}"
+
+    def _create_entrypoint_commands(
+        self, job: JobType, install_dir: str, *, env_file: Optional[str] = None
+    ) -> str:
         executable = job.executable
         if not isinstance(executable, executables.AppBundle):
             raise ValueError("Only Command executable is supported")
         executor = job.executor
+        env_file = env_file or f'"{install_dir}/.environment"'
         if not isinstance(executor, executors.SupportsContainer):
             raise TypeError("Executor should support container configuration")
 
@@ -122,6 +133,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
                     image=executable.container_image.name,
                     options=executor.container_options or executors.ShifterOptions(),
                     install_dir=install_dir,
+                    env_file=env_file,
                     args=_rewrite_array_job_command(
                         f"./{self.JOB_PARAM_NAME}", executable.entrypoint_command
                     ),
@@ -175,7 +187,7 @@ class JobScriptBuilder(abc.ABC, Generic[ExecutorType]):
                 options=runtime_options,
                 working_dir=self.CONTAINER_WORKDIR,
                 use_gpu=self._is_gpu_requested(executor),
-                env_file=xm.ShellSafeArg(f'"{install_dir}/.environment"'),
+                env_file=xm.ShellSafeArg(env_file),
             )
 
         else:
@@ -439,7 +451,12 @@ def create_docker_command(
 
 
 def create_shifter_command(
-    *, image: str, options: executors.ShifterOptions, install_dir: str, args: List[str]
+    *,
+    image: str,
+    options: executors.ShifterOptions,
+    install_dir: str,
+    args: List[str],
+    env_file: Optional[str] = None,
 ) -> List[str]:
     # Shifter mounts directories, not the per-job parameter file used by the
     # other runtimes. Source and job-param.sh stay together on a visible path.
@@ -453,7 +470,7 @@ def create_shifter_command(
     cmd.extend(
         [
             f'--workdir="{install_dir}"',
-            f'--env-file="{install_dir}/.environment"',
+            "--env-file=" + (env_file or f'"{install_dir}/.environment"'),
             "--",
             *args,
         ]

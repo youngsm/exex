@@ -210,6 +210,9 @@ class Slurm(xm.Executor, SupportsContainer):
     None uses runtime defaults. Host executables accept only None.
     mode selects detached sbatch submission or an attached owned salloc chain.
     It does not select QoS or borrow an existing allocation.
+    srun_options=None runs the entrypoint once. A sequence launches the existing
+    host/container command through srun with those native options. Preparation
+    and artifact capture still run once; workdir_root must be shared by tasks.
     """
 
     requirements: JobRequirements = attr.Factory(JobRequirements)
@@ -240,6 +243,8 @@ class Slurm(xm.Executor, SupportsContainer):
         kw_only=True,
         validator=attr.validators.in_(("sbatch", "salloc")),
     )
+
+    srun_options: Optional[Sequence[str]] = attr.field(default=None, kw_only=True)
 
     def Spec(self) -> SlurmSpec:
         return SlurmSpec(cluster=self.cluster)
