@@ -208,6 +208,13 @@ live GPU qualification against uninterrupted references, with W&B histories
 checked independently. Full regressions: 600 passed, 2 upstream integration
 tests deselected. See the linked evidence for scope and job IDs.
 
+The follow-up [four-GPU continuation qualification](inputs.md#four-gpu-continuation-2026-09-22-utc)
+passed on NERSC/Shifter without framework changes: a paused producer and new
+consumer allocation matched an uninterrupted four-rank NCCL/DDP reference,
+including rank-local restored state and the exact subsequent trajectory.
+This qualifies the fixed-world-size, single-node synthetic probe with AMP and
+data-loader workers disabled, not multi-node/resharded or full SSL continuation.
+
 ## Decision and scope
 
 Extend LXM3, not exex under a different name. Keep its

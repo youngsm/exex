@@ -203,3 +203,19 @@ The reusable application probe is pimm's
 An SSH failure before scheduler submission and a later read-only SSH disconnect
 were explicitly retried by the operator. The library raised ordinary errors;
 no automatic retry or uncertain-submission machinery was added.
+
+### Four-GPU continuation, 2026-09-22 UTC
+
+A separate fixed-topology NERSC/Shifter probe passed with four NCCL/DDP ranks on
+one node. Producer `58732735` paused after step 2; consumer `58733245` resumed in
+a new allocation and matched uninterrupted reference `58732736` exactly on all
+ranks: restored state, subsequent samples, RNG draws, losses and final state.
+All three jobs completed with exit `0:0` in 50/47/50 seconds respectively.
+Per-rank RNG streams were deliberately distinct; all 64 samples appeared once
+across the combined trajectory and parameters remained synchronized across ranks.
+The existing artifact API needed no changes. Evidence and the independent verifier
+are under `/sdf/group/neutrino/youngsam/representations/lxm3-ddp-continuation.yyYTpv`;
+the fixture is pimm's `tests/fixtures/lxm3/distributed_continuation.py`.
+This is a tiny stochastic linear model, with AMP, data-loader workers and W&B
+disabled. Multi-node, changed-topology, FSDP and full SSL trajectories remain
+separate gates; this does not repeat or expand the cross-site transfer matrix.
